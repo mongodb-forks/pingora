@@ -212,7 +212,6 @@ impl SocketDigest {
 #[derive(Clone, Debug)]
 /// Represents all possible address values in a v1 proxy protocol header
 pub enum V1Addresses {
-    Unknown,
     Ipv4 {
         source: SocketAddrV4,
         destination: SocketAddrV4,
@@ -226,7 +225,6 @@ pub enum V1Addresses {
 #[derive(Clone, Debug)]
 /// Represents all possible address values in a v2 proxy protocol header
 pub enum V2Addresses {
-    Unspec,
     Ipv4 {
         source: SocketAddrV4,
         destination: SocketAddrV4,
@@ -248,9 +246,25 @@ pub enum ProxyProtocolAddrsDigest {
     V2AddrBlock(V2Addresses),
 }
 
-impl Default for ProxyProtocolAddrsDigest {
-    fn default() -> Self {
-        ProxyProtocolAddrsDigest::V1AddrBlock(V1Addresses::Unknown)
+impl ProxyProtocolAddrsDigest {
+    pub fn from_v1_ipv4(source: SocketAddrV4, destination: SocketAddrV4) -> Self {
+        ProxyProtocolAddrsDigest::V1AddrBlock(V1Addresses::Ipv4 { source, destination })
+    }
+
+    pub fn from_v1_ipv6(source: SocketAddrV6, destination: SocketAddrV6) -> Self {
+        ProxyProtocolAddrsDigest::V1AddrBlock(V1Addresses::Ipv6 { source, destination })
+    }
+
+    pub fn from_v2_ipv4(source: SocketAddrV4, destination: SocketAddrV4) -> Self {
+        ProxyProtocolAddrsDigest::V2AddrBlock(V2Addresses::Ipv4 { source, destination })
+    }
+
+    pub fn from_v2_ipv6(source: SocketAddrV6, destination: SocketAddrV6) -> Self {
+        ProxyProtocolAddrsDigest::V2AddrBlock(V2Addresses::Ipv6 { source, destination })
+    }
+
+    pub fn from_v2_unix(source: [u8; 108], destination: [u8; 108]) -> Self {
+        ProxyProtocolAddrsDigest::V2AddrBlock(V2Addresses::Unix { source, destination })
     }
 }
 
