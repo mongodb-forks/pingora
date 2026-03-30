@@ -14,6 +14,7 @@
 
 //! Extra information about the connection
 
+use std::net::{SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -35,6 +36,8 @@ pub struct Digest {
     pub proxy_digest: Option<Arc<ProxyDigest>>,
     /// Information about underlying socket/fd of this connection
     pub socket_digest: Option<Arc<SocketDigest>>,
+    /// Parsed proxy protocol information, if any
+    pub proxy_protocol_addrs_digest: Option<Arc<ProxyProtocolAddrsDigest>>,
 }
 
 /// The interface to return protocol related information
@@ -206,6 +209,51 @@ impl SocketDigest {
     }
 }
 
+#[derive(Clone, Debug)]
+/// Represents all possible address values in a v1 proxy protocol header
+pub enum V1Addresses {
+    Unknown,
+    Ipv4 {
+        source: SocketAddrV4,
+        destination: SocketAddrV4,
+    },
+    Ipv6 {
+        source: SocketAddrV6,
+        destination: SocketAddrV6,
+    },
+}
+
+#[derive(Clone, Debug)]
+/// Represents all possible address values in a v2 proxy protocol header
+pub enum V2Addresses {
+    Unspec,
+    Ipv4 {
+        source: SocketAddrV4,
+        destination: SocketAddrV4,
+    },
+    Ipv6 {
+        source: SocketAddrV6,
+        destination: SocketAddrV6,
+    },
+    Unix {
+        source: [u8; 108],
+        destination: [u8; 108],
+    },
+}
+
+#[derive(Clone, Debug)]
+/// Stores the address block provided in a proxy protocol header 
+pub enum ProxyProtocolAddrsDigest {
+    V1AddrBlock(V1Addresses),
+    V2AddrBlock(V2Addresses),
+}
+
+impl Default for ProxyProtocolAddrsDigest {
+    fn default() -> Self {
+        ProxyProtocolAddrsDigest::V1AddrBlock(V1Addresses::Unknown)
+    }
+}
+
 /// The interface to return timing information
 pub trait GetTimingDigest {
     /// Return the timing for each layer from the lowest layer to upper
@@ -228,4 +276,10 @@ pub trait GetProxyDigest {
 pub trait GetSocketDigest {
     fn get_socket_digest(&self) -> Option<Arc<SocketDigest>>;
     fn set_socket_digest(&mut self, _socket_digest: SocketDigest) {}
+}
+
+/// The interface to set or return proxy protocol addr information
+pub trait GetProxyProtocolAddrsDigest {
+    fn get_proxy_protocol_addrs_digest(&self) -> Option<Arc<ProxyProtocolAddrsDigest>>;
+    fn set_proxy_protocol_addrs_digest(&mut self, _proxy_protocol_addrs_digest: ProxyProtocolAddrsDigest) {}
 }

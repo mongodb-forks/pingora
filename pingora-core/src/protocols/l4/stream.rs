@@ -40,7 +40,7 @@ use crate::protocols::l4::ext::{set_tcp_keepalive, TcpKeepalive};
 use crate::protocols::l4::virt;
 use crate::protocols::raw_connect::ProxyDigest;
 use crate::protocols::{
-    GetProxyDigest, GetSocketDigest, GetTimingDigest, Peek, Shutdown, SocketDigest, Ssl,
+    GetProxyDigest, GetProxyProtocolAddrsDigest, GetSocketDigest, GetTimingDigest, Peek, ProxyProtocolAddrsDigest, Shutdown, SocketDigest, Ssl,
     TimingDigest, UniqueID, UniqueIDType,
 };
 use crate::upstreams::peer::Tracer;
@@ -374,6 +374,7 @@ pub struct Stream {
     buffer_write: bool,
     proxy_digest: Option<Arc<ProxyDigest>>,
     socket_digest: Option<Arc<SocketDigest>>,
+    proxy_protocol_addrs_digest: Option<Arc<ProxyProtocolAddrsDigest>>,
     /// When this connection is established
     pub established_ts: SystemTime,
     /// The distributed tracing object for this stream
@@ -481,6 +482,7 @@ impl From<TcpStream> for Stream {
             established_ts: SystemTime::now(),
             proxy_digest: None,
             socket_digest: None,
+            proxy_protocol_addrs_digest: None,
             tracer: None,
             read_pending_time: AccumulatedDuration::new(),
             write_pending_time: AccumulatedDuration::new(),
@@ -502,6 +504,7 @@ impl From<virt::VirtualSocketStream> for Stream {
             established_ts: SystemTime::now(),
             proxy_digest: None,
             socket_digest: None,
+            proxy_protocol_addrs_digest: None,
             tracer: None,
             read_pending_time: AccumulatedDuration::new(),
             write_pending_time: AccumulatedDuration::new(),
@@ -524,6 +527,7 @@ impl From<UnixStream> for Stream {
             established_ts: SystemTime::now(),
             proxy_digest: None,
             socket_digest: None,
+            proxy_protocol_addrs_digest: None,
             tracer: None,
             read_pending_time: AccumulatedDuration::new(),
             write_pending_time: AccumulatedDuration::new(),
@@ -617,6 +621,16 @@ impl GetSocketDigest for Stream {
 
     fn set_socket_digest(&mut self, socket_digest: SocketDigest) {
         self.socket_digest = Some(Arc::new(socket_digest))
+    }
+}
+
+impl GetProxyProtocolAddrsDigest for Stream {
+    fn get_proxy_protocol_addrs_digest(&self) -> Option<Arc<ProxyProtocolAddrsDigest>> {
+        self.proxy_protocol_addrs_digest.clone()
+    }
+
+    fn set_proxy_protocol_addrs_digest(&mut self, proxy_protocol_addrs_digest: ProxyProtocolAddrsDigest) {
+        self.proxy_protocol_addrs_digest = Some(Arc::new(proxy_protocol_addrs_digest))
     }
 }
 
