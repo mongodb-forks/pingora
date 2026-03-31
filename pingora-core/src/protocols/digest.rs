@@ -20,6 +20,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use once_cell::sync::OnceCell;
+use pingora_error::{Error, ErrorType, Result};
 
 use super::l4::ext::{get_original_dest, get_recv_buf, get_snd_buf, get_tcp_info, TCP_INFO};
 use super::l4::socket::SocketAddr;
@@ -270,16 +271,16 @@ impl ProxyProtocolAddrsDigest {
 
     /// Returns `(source_ip, source_port, destination_ip, destination_port)` for
     /// IPv4/IPv6 variants, or `None` for Unix addresses.
-    pub fn addrs_and_ports(&self) -> Option<(IpAddr, u16, IpAddr, u16)> {
+    pub fn addrs_and_ports(&self) -> Result<(IpAddr, u16, IpAddr, u16)> {
         match self {
             ProxyProtocolAddrsDigest::V1AddrBlock(v1) => match v1 {
-                V1Addresses::Ipv4 { source, destination } => Some((
+                V1Addresses::Ipv4 { source, destination } => Ok((
                     IpAddr::V4(*source.ip()),
                     source.port(),
                     IpAddr::V4(*destination.ip()),
                     destination.port(),
                 )),
-                V1Addresses::Ipv6 { source, destination } => Some((
+                V1Addresses::Ipv6 { source, destination } => Ok((
                     IpAddr::V6(*source.ip()),
                     source.port(),
                     IpAddr::V6(*destination.ip()),
@@ -287,19 +288,19 @@ impl ProxyProtocolAddrsDigest {
                 )),
             },
             ProxyProtocolAddrsDigest::V2AddrBlock(v2) => match v2 {
-                V2Addresses::Ipv4 { source, destination } => Some((
+                V2Addresses::Ipv4 { source, destination } => Ok((
                     IpAddr::V4(*source.ip()),
                     source.port(),
                     IpAddr::V4(*destination.ip()),
                     destination.port(),
                 )),
-                V2Addresses::Ipv6 { source, destination } => Some((
+                V2Addresses::Ipv6 { source, destination } => Ok((
                     IpAddr::V6(*source.ip()),
                     source.port(),
                     IpAddr::V6(*destination.ip()),
                     destination.port(),
                 )),
-                V2Addresses::Unix { .. } => None,
+                V2Addresses::Unix { .. } => Error::e_explain(ErrorType::UnsupportedProxyProtocolAddr, "only IP addresses are supported over proxy protocol"),
             },
         }
     }
