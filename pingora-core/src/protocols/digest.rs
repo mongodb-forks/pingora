@@ -211,7 +211,7 @@ impl SocketDigest {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 /// Represents all possible address values in a v1 proxy protocol header
 pub enum V1Addresses {
     Ipv4 {
@@ -224,7 +224,7 @@ pub enum V1Addresses {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 /// Represents all possible address values in a v2 proxy protocol header
 pub enum V2Addresses {
     Ipv4 {
@@ -241,7 +241,7 @@ pub enum V2Addresses {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 /// Stores the address block provided in a proxy protocol header 
 pub enum ProxyProtocolAddrsDigest {
     V1AddrBlock(V1Addresses),
@@ -270,7 +270,7 @@ impl ProxyProtocolAddrsDigest {
     }
 
     /// Returns `(source_ip, source_port, destination_ip, destination_port)` for
-    /// IPv4/IPv6 variants, or `None` for Unix addresses.
+    /// IPv4/IPv6 variants, or `Error` for Unix addresses.
     pub fn addrs_and_ports(&self) -> Result<(IpAddr, u16, IpAddr, u16)> {
         match self {
             ProxyProtocolAddrsDigest::V1AddrBlock(v1) => match v1 {
