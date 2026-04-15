@@ -14,10 +14,13 @@
 
 //! Extra information about the connection
 
+use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::net::{IpAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use once_cell::sync::OnceCell;
+use pingora_error::{Error, ErrorType, Result};
 
 use super::l4::ext::{get_original_dest, get_recv_buf, get_snd_buf, get_tcp_info, TCP_INFO};
 use super::l4::socket::SocketAddr;
@@ -35,6 +38,8 @@ pub struct Digest {
     pub proxy_digest: Option<Arc<ProxyDigest>>,
     /// Information about underlying socket/fd of this connection
     pub socket_digest: Option<Arc<SocketDigest>>,
+    /// Parsed proxy protocol information, if any
+    pub proxy_protocol_addrs_digest: Option<Arc<ProxyProtocolAddrsDigest>>,
 }
 
 /// The interface to return protocol related information
@@ -206,6 +211,151 @@ impl SocketDigest {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Represents all possible address values in a v1 proxy protocol header
+pub enum V1Addresses {
+    Ipv4 {
+        source: SocketAddrV4,
+        destination: SocketAddrV4,
+    },
+    Ipv6 {
+        source: SocketAddrV6,
+        destination: SocketAddrV6,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Represents all possible address values in a v2 proxy protocol header
+pub enum V2Addresses {
+    Ipv4 {
+        source: SocketAddrV4,
+        destination: SocketAddrV4,
+    },
+    Ipv6 {
+        source: SocketAddrV6,
+        destination: SocketAddrV6,
+    },
+    Unix {
+        source: [u8; 108],
+        destination: [u8; 108],
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Stores the address block provided in a proxy protocol header 
+pub enum ProxyProtocolAddrsDigest {
+    V1AddrBlock(V1Addresses),
+    V2AddrBlock(V2Addresses),
+}
+
+impl ProxyProtocolAddrsDigest {
+    pub fn from_v1_ipv4(source: SocketAddrV4, destination: SocketAddrV4) -> Self {
+        ProxyProtocolAddrsDigest::V1AddrBlock(V1Addresses::Ipv4 { source, destination })
+    }
+
+    pub fn from_v1_ipv6(source: SocketAddrV6, destination: SocketAddrV6) -> Self {
+        ProxyProtocolAddrsDigest::V1AddrBlock(V1Addresses::Ipv6 { source, destination })
+    }
+
+    pub fn from_v2_ipv4(source: SocketAddrV4, destination: SocketAddrV4) -> Self {
+        ProxyProtocolAddrsDigest::V2AddrBlock(V2Addresses::Ipv4 { source, destination })
+    }
+
+    pub fn from_v2_ipv6(source: SocketAddrV6, destination: SocketAddrV6) -> Self {
+        ProxyProtocolAddrsDigest::V2AddrBlock(V2Addresses::Ipv6 { source, destination })
+    }
+
+    pub fn from_v2_unix(source: [u8; 108], destination: [u8; 108]) -> Self {
+        ProxyProtocolAddrsDigest::V2AddrBlock(V2Addresses::Unix { source, destination })
+    }
+
+    /// Returns `(source_ip, source_port, destination_ip, destination_port)` for
+    /// IPv4/IPv6 variants, or `Error` for Unix addresses.
+    pub fn addrs_and_ports(&self) -> Result<(IpAddr, u16, IpAddr, u16)> {
+        match self {
+            ProxyProtocolAddrsDigest::V1AddrBlock(v1) => match v1 {
+                V1Addresses::Ipv4 { source, destination } => Ok((
+                    IpAddr::V4(*source.ip()),
+                    source.port(),
+                    IpAddr::V4(*destination.ip()),
+                    destination.port(),
+                )),
+                V1Addresses::Ipv6 { source, destination } => Ok((
+                    IpAddr::V6(*source.ip()),
+                    source.port(),
+                    IpAddr::V6(*destination.ip()),
+                    destination.port(),
+                )),
+            },
+            ProxyProtocolAddrsDigest::V2AddrBlock(v2) => match v2 {
+                V2Addresses::Ipv4 { source, destination } => Ok((
+                    IpAddr::V4(*source.ip()),
+                    source.port(),
+                    IpAddr::V4(*destination.ip()),
+                    destination.port(),
+                )),
+                V2Addresses::Ipv6 { source, destination } => Ok((
+                    IpAddr::V6(*source.ip()),
+                    source.port(),
+                    IpAddr::V6(*destination.ip()),
+                    destination.port(),
+                )),
+                V2Addresses::Unix { .. } => Error::e_explain(ErrorType::UnsupportedProxyProtocolAddr, "only IP addresses are supported over proxy protocol"),
+            },
+        }
+    }
+}
+
+impl Display for V1Addresses {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            V1Addresses::Ipv4 { source, destination } => {
+                write!(f, "source: {source}, destination: {destination}")
+            }
+            V1Addresses::Ipv6 { source, destination } => {
+                write!(f, "source: {source}, destination: {destination}")
+            }
+        }
+    }
+}
+
+impl Display for V2Addresses {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            V2Addresses::Ipv4 { source, destination } => {
+                write!(f, "source: {source}, destination: {destination}")
+            }
+            V2Addresses::Ipv6 { source, destination } => {
+                write!(f, "source: {source}, destination: {destination}")
+            }
+            V2Addresses::Unix { source, destination } => {
+                let src = unix_addr_to_str(source);
+                let dst = unix_addr_to_str(destination);
+                write!(f, "source: {src}, destination: {dst}")
+            }
+        }
+    }
+}
+
+impl Display for ProxyProtocolAddrsDigest {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            ProxyProtocolAddrsDigest::V1AddrBlock(addrs) => {
+                write!(f, "{addrs}")
+            }
+            ProxyProtocolAddrsDigest::V2AddrBlock(addrs) => {
+                write!(f, "{addrs}")
+            }
+        }
+    }
+}
+
+/// Convert a proxy-protocol Unix address (108-byte, null-padded) to a display string.
+fn unix_addr_to_str(addr: &[u8; 108]) -> String {
+    let len = addr.iter().position(|&b| b == 0).unwrap_or(addr.len());
+    String::from_utf8_lossy(&addr[..len]).into_owned()
+}
+
 /// The interface to return timing information
 pub trait GetTimingDigest {
     /// Return the timing for each layer from the lowest layer to upper
@@ -228,4 +378,10 @@ pub trait GetProxyDigest {
 pub trait GetSocketDigest {
     fn get_socket_digest(&self) -> Option<Arc<SocketDigest>>;
     fn set_socket_digest(&mut self, _socket_digest: SocketDigest) {}
+}
+
+/// The interface to set or return proxy protocol addr information
+pub trait GetProxyProtocolAddrsDigest {
+    fn get_proxy_protocol_addrs_digest(&self) -> Option<Arc<ProxyProtocolAddrsDigest>>;
+    fn set_proxy_protocol_addrs_digest(&mut self, _proxy_protocol_addrs_digest: ProxyProtocolAddrsDigest) {}
 }

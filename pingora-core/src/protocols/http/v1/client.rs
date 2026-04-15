@@ -71,6 +71,7 @@ impl HttpSession {
             timing_digest: stream.get_timing_digest(),
             proxy_digest: stream.get_proxy_digest(),
             socket_digest: stream.get_socket_digest(),
+            proxy_protocol_addrs_digest: stream.get_proxy_protocol_addrs_digest(),
         });
         HttpSession {
             underlying_stream: stream,
