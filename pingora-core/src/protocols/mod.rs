@@ -23,7 +23,7 @@ pub mod tls;
 mod windows;
 
 pub use digest::{
-    Digest, GetProxyDigest, GetSocketDigest, GetTimingDigest, ProtoDigest, SocketDigest,
+    Digest, GetProxyDigest, GetProxyProtocolAddrsDigest, GetSocketDigest, GetTimingDigest, ProtoDigest, ProxyProtocolAddrsDigest, SocketDigest,
     TimingDigest,
 };
 pub use l4::ext::TcpKeepalive;
@@ -94,6 +94,7 @@ pub trait IO:
     + GetTimingDigest
     + GetProxyDigest
     + GetSocketDigest
+    + GetProxyProtocolAddrsDigest
     + Peek
     + Unpin
     + Debug
@@ -115,6 +116,7 @@ impl<
             + GetTimingDigest
             + GetProxyDigest
             + GetSocketDigest
+            + GetProxyProtocolAddrsDigest
             + Peek
             + Unpin
             + Debug
@@ -162,6 +164,11 @@ mod ext_io_impl {
     }
     impl GetSocketDigest for Mock {
         fn get_socket_digest(&self) -> Option<Arc<SocketDigest>> {
+            None
+        }
+    }
+    impl GetProxyProtocolAddrsDigest for Mock {
+        fn get_proxy_protocol_addrs_digest(&self) -> Option<Arc<ProxyProtocolAddrsDigest>> {
             None
         }
     }
@@ -224,6 +231,11 @@ mod ext_io_impl {
             None
         }
     }
+    impl GetProxyProtocolAddrsDigest for DuplexStream {
+        fn get_proxy_protocol_addrs_digest(&self) -> Option<Arc<ProxyProtocolAddrsDigest>> {
+            None
+        }
+    }
 
     impl Peek for DuplexStream {}
 }
@@ -235,7 +247,7 @@ pub mod ext_test {
     use async_trait::async_trait;
 
     use super::{
-        raw_connect, GetProxyDigest, GetSocketDigest, GetTimingDigest, Peek, Shutdown,
+        raw_connect, GetProxyDigest, GetProxyProtocolAddrsDigest, GetSocketDigest, GetTimingDigest, Peek, ProxyProtocolAddrsDigest, Shutdown,
         SocketDigest, Ssl, TimingDigest, UniqueID, UniqueIDType,
     };
 
@@ -261,6 +273,11 @@ pub mod ext_test {
     }
     impl GetSocketDigest for tokio::net::UnixStream {
         fn get_socket_digest(&self) -> Option<Arc<SocketDigest>> {
+            None
+        }
+    }
+    impl GetProxyProtocolAddrsDigest for tokio::net::UnixStream {
+        fn get_proxy_protocol_addrs_digest(&self) -> Option<Arc<ProxyProtocolAddrsDigest>> {
             None
         }
     }

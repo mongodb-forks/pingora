@@ -121,6 +121,7 @@ pub enum ErrorType {
     H2Error,     // catch all
     H2Downgrade, // Peer over h2 requests to downgrade to h1
     InvalidH2,   // Peer sends invalid h2 frames to us
+    UnsupportedProxyProtocolAddr, // Proxy protocol header uses unsupported peer addr type
     // IO error on established connections
     ReadError,
     WriteError,
@@ -178,6 +179,7 @@ impl ErrorType {
             ErrorType::H1Error => "H1Error",
             ErrorType::H2Error => "H2Error",
             ErrorType::InvalidH2 => "InvalidH2",
+            ErrorType::UnsupportedProxyProtocolAddr => "UnsupportedProxyProtocolAddr",
             ErrorType::H2Downgrade => "H2Downgrade",
             ErrorType::ReadError => "ReadError",
             ErrorType::WriteError => "WriteError",
