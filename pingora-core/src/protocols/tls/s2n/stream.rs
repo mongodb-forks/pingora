@@ -16,7 +16,7 @@ use crate::protocols::digest::TimingDigest;
 use crate::protocols::raw_connect::ProxyDigest;
 use crate::protocols::tls::SslDigest;
 use crate::protocols::{
-    GetProxyDigest, GetSocketDigest, GetTimingDigest, Peek, Shutdown, SocketDigest, Ssl, UniqueID,
+    GetProxyDigest, GetProxyProtocolAddrsDigest, GetSocketDigest, GetTimingDigest, ProxyProtocolAddrsDigest, Peek, Shutdown, SocketDigest, Ssl, UniqueID,
     UniqueIDType, ALPN,
 };
 use crate::tls::TlsStream as S2NTlsStream;
@@ -276,6 +276,18 @@ where
 {
     fn get_proxy_digest(&self) -> Option<Arc<ProxyDigest>> {
         self.stream.get_ref().get_proxy_digest()
+    }
+}
+
+impl<S> GetProxyProtocolAddrsDigest for TlsStream<S>
+where
+    S: GetProxyProtocolAddrsDigest + AsyncRead + AsyncWrite + std::marker::Unpin,
+{
+    fn get_proxy_protocol_addrs_digest(&self) -> Option<Arc<ProxyProtocolAddrsDigest>> {
+        self.get_ref().get_proxy_protocol_addrs_digest()
+    }
+    fn set_proxy_protocol_addrs_digest(&mut self, proxy_protocol_addrs_digest: ProxyProtocolAddrsDigest) {
+        self.get_mut().set_proxy_protocol_addrs_digest(proxy_protocol_addrs_digest)
     }
 }
 
