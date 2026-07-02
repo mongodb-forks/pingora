@@ -20,6 +20,7 @@ use pingora_s2n::{
     load_certs_and_key_files, ClientAuthType, Config, IgnoreVerifyHostnameCallback, S2NPolicy,
     TlsAcceptor, DEFAULT_TLS13,
 };
+use s2n_tls::enums::SerializationVersion;
 
 use crate::protocols::tls::server::handshake;
 use crate::protocols::tls::{CaType, PskConfig, PskType, S2NConnectionBuilder, TlsStream};
@@ -86,6 +87,8 @@ impl TlsSettings {
                 .set_verify_host_callback(IgnoreVerifyHostnameCallback::new())
                 .unwrap();
         }
+
+        builder.set_serialization_version(SerializationVersion::V1).expect("could not init serialization");
 
         let config = builder.build().unwrap();
         let connection_builder = S2NConnectionBuilder {
