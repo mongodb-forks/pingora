@@ -20,6 +20,7 @@ use pingora_s2n::{
     load_certs_and_key_files, ClientAuthType, Config, IgnoreVerifyHostnameCallback, S2NPolicy,
     TlsAcceptor, DEFAULT_TLS13,
 };
+use s2n_tls::enums::SerializationVersion;
 
 use crate::protocols::tls::server::handshake;
 use crate::protocols::tls::{CaType, PskConfig, PskType, S2NConnectionBuilder, TlsStream};
@@ -36,6 +37,7 @@ pub struct TlsSettings {
     client_auth_required: bool,
     verify_client_hostname: bool,
     max_blinding_delay: Option<u32>,
+    allow_serialization: bool,
 }
 
 pub struct Acceptor {
@@ -87,11 +89,17 @@ impl TlsSettings {
                 .unwrap();
         }
 
+        if self.allow_serialization {
+            builder.set_serialization_version(SerializationVersion::V1).expect("could not init serialization");
+        }
+        
+
         let config = builder.build().unwrap();
         let connection_builder = S2NConnectionBuilder {
             config: config,
             psk_config: self.psk_config.clone(),
             security_policy: Some(policy.clone()),
+            allow_serialization: self.allow_serialization,
         };
 
         Acceptor {
@@ -105,7 +113,7 @@ impl TlsSettings {
         self.set_alpn(ALPN::H2H1);
     }
 
-    fn set_alpn(&mut self, alpn: ALPN) {
+    pub fn set_alpn(&mut self, alpn: ALPN) {
         self.alpn = Some(alpn);
     }
 
@@ -150,6 +158,13 @@ impl TlsSettings {
         self.max_blinding_delay = Some(delay);
     }
 
+    /// If TLS connections need to be serializable for sharing purposes,
+    /// then recv buffering needs to be disabled and serialization needs to
+    /// be enabled.
+    pub fn set_allow_serialization(&mut self, allow_serialization: bool) {
+        self.allow_serialization = allow_serialization;
+    }
+
     pub fn intermediate(cert_path: &str, key_path: &str) -> Result<Self>
     where
         Self: Sized,
@@ -164,6 +179,7 @@ impl TlsSettings {
             client_auth_required: false,
             verify_client_hostname: false,
             max_blinding_delay: None,
+            allow_serialization: false,
         })
     }
 
@@ -178,6 +194,7 @@ impl TlsSettings {
             client_auth_required: false,
             verify_client_hostname: false,
             max_blinding_delay: None,
+            allow_serialization: false,
         }
     }
 }

@@ -446,6 +446,25 @@ impl Stream {
         Ok(())
     }
 
+    pub fn as_tcp_stream(&self) -> Option<&TcpStream> {
+        match &self.stream().get_ref().stream {
+            RawStream::Tcp(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    #[cfg(unix)]
+    pub fn as_unix_stream(&self) -> Option<&UnixStream> {
+        match &self.stream().get_ref().stream {
+            RawStream::Unix(s) => Some(s),
+            _ => None,
+        }
+    }
+    
+    pub async fn flush_buf_stream(&mut self) -> io::Result<()> {
+        self.stream_mut().flush().await
+    }
+
     /// Put Some data back to the head of the stream to be read again
     /// This can be used in cases where we "peek" at data only to find
     /// it doesn't match what's expected, and so it needs to be put back
