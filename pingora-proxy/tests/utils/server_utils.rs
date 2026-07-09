@@ -863,6 +863,7 @@ impl PskTlsServer {
             config: config.clone(),
             psk_config: Some(psk_config.clone()),
             security_policy: None,
+            allow_serialization: false,
         };
 
         let acceptor = TlsAcceptor::new(connection_builder);
