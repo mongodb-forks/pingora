@@ -82,6 +82,7 @@ pub struct S2NConnectionBuilder {
     pub config: Config,
     pub psk_config: Option<Arc<PskConfig>>,
     pub security_policy: Option<S2NPolicy>,
+    pub allow_serialization: bool,
 }
 
 impl ConnectionBuilder for S2NConnectionBuilder {
@@ -102,6 +103,13 @@ impl ConnectionBuilder for S2NConnectionBuilder {
 
         if let Some(policy) = &self.security_policy {
             conn.set_security_policy(policy)?;
+        }
+
+        // If serialization is enabled, then receive buffering
+        // should be turned off since this data isn't included
+        // in the serialization.
+        if self.allow_serialization {
+            conn.set_receive_buffering(false)?;
         }
 
         Ok(conn)
