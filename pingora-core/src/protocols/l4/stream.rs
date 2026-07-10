@@ -352,9 +352,10 @@ impl AsRawSocket for RawStreamWrapper {
     }
 }
 
-// Large read buffering helps reducing syscalls with little trade-off
-// Ssl layer always does "small" reads in 16k (TLS record size) so L4 read buffer helps a lot.
-const BUF_READ_SIZE: usize = 64 * 1024;
+// Read buffering is intentionally disabled (0) so that reads pass straight
+// through to the underlying socket and no bytes are ever read ahead into a
+// userspace buffer.
+const BUF_READ_SIZE: usize = 0;
 // Small write buf to match MSS. Too large write buf delays real time communication.
 // This buffering effectively implements something similar to Nagle's algorithm.
 // The benefit is that user space can control when to flush, where Nagle's can't be controlled.
@@ -485,6 +486,12 @@ impl Stream {
         let stream =
             stream.map(|s| BufStream::with_capacity(BUF_READ_SIZE, BUF_WRITE_SIZE, s.into_inner()));
         let _ = mem::replace(&mut self.stream, stream);
+    }
+
+    /// Returns `true` if there is data buffered in `rewind_read_buf` that has
+    /// been read off the socket but not yet consumed by a reader.
+    pub fn has_pending_rewind_data(&self) -> bool {
+        !self.rewind_read_buf.is_empty()
     }
 }
 
