@@ -199,15 +199,22 @@ pub(crate) struct UninitializedStream {
 }
 
 impl UninitializedStream {
-    pub async fn handshake(mut self) -> Result<Stream> {
+    pub fn set_buffer(&mut self) {
         self.l4.set_buffer();
+    }
 
-        // Expose raw l4 stream to any registered pre-TLS inspectors before
-        // handshaking.
+    /// Expose the raw l4 stream to any registered pre-TLS inspectors before
+    /// handshaking.
+    pub async fn inspect_pre_tls(&mut self) -> Result<()> {
         if let Some(inspector) = self.pre_tls_inspector.as_ref() {
             inspector.inspect(&mut self.l4).await?;
         }
+        Ok(())
+    }
 
+    /// Complete the TLS handshake, or pass the stream through unchanged when
+    /// plaintext. Assumes `set_buffer` and `inspect_pre_tls` have already run.
+    pub async fn finish_handshake(self) -> Result<Stream> {
         let res_with_stream: Result<Stream> = if let Some(tls) = self.tls {
             let tls_stream = tls.tls_handshake(self.l4).await?;
             Ok(Box::new(tls_stream))
@@ -216,6 +223,13 @@ impl UninitializedStream {
         };
 
         res_with_stream
+    }
+
+    #[cfg(test)]
+    pub async fn handshake(mut self) -> Result<Stream> {
+        self.set_buffer();
+        self.inspect_pre_tls().await?;
+        self.finish_handshake().await
     }
 
     /// Get the peer address of the connection if available
