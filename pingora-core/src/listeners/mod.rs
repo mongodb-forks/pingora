@@ -203,8 +203,12 @@ impl UninitializedStream {
         self.l4.set_buffer();
     }
 
-    /// Expose the raw l4 stream to any registered pre-TLS inspectors before
+    /// Expose the raw L4 stream to any registered pre-TLS inspectors before
     /// handshaking.
+    ///
+    /// Call [`Self::set_buffer`] before this to ensure the stream is wrapped in a
+    /// buffered reader/writer (the buffer is intentionally allocated lazily to
+    /// reduce accept()-path overhead).
     pub async fn inspect_pre_tls(&mut self) -> Result<()> {
         if let Some(inspector) = self.pre_tls_inspector.as_ref() {
             inspector.inspect(&mut self.l4).await?;
