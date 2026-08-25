@@ -212,8 +212,21 @@ impl<A: ServerApp + Send + Sync + 'static> Service<A> {
                     let app = app_logic.clone();
                     let shutdown = shutdown.clone();
                     current_handle().spawn(async move {
+                        let mut io = io;
                         let peer_addr = io.peer_addr();
-                        match timeout(Duration::from_secs(60), io.handshake()).await {
+
+                        // Set up buffers and run pre-TLS inspection before we start
+                        // the timeout for the actual TLS handshake.
+                        io.set_buffer();
+                        if let Err(e) = io.inspect_pre_tls().await {
+                            if let Some(addr) = peer_addr {
+                                error!("Downstream pre-TLS inspection rejected connection from {}: {e}", addr);
+                            } else {
+                                error!("Downstream pre-TLS inspection rejected connection: {e}");
+                            }
+                            return;
+                        }
+                        match timeout(Duration::from_secs(60), io.finish_handshake()).await {
                             Ok(handshake) => {
                                 match handshake {
                                     Ok(io) => Self::handle_event(io, app, shutdown).await,
