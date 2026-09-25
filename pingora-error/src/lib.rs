@@ -117,10 +117,10 @@ pub enum ErrorType {
     ConnectProxyFailure,
     // protocol errors
     InvalidHTTPHeader,
-    H1Error,     // catch all
-    H2Error,     // catch all
-    H2Downgrade, // Peer over h2 requests to downgrade to h1
-    InvalidH2,   // Peer sends invalid h2 frames to us
+    H1Error,                      // catch all
+    H2Error,                      // catch all
+    H2Downgrade,                  // Peer over h2 requests to downgrade to h1
+    InvalidH2,                    // Peer sends invalid h2 frames to us
     UnsupportedProxyProtocolAddr, // Proxy protocol header uses unsupported peer addr type
     // IO error on established connections
     ReadError,

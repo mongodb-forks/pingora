@@ -17,7 +17,8 @@
 use crate::protocols::raw_connect::ProxyDigest;
 use crate::protocols::tls::SslStream;
 use crate::protocols::{
-    GetProxyDigest, GetProxyProtocolAddrsDigest, GetSocketDigest, GetTimingDigest, ProxyProtocolAddrsDigest, SocketDigest, TimingDigest, IO,
+    GetProxyDigest, GetProxyProtocolAddrsDigest, GetSocketDigest, GetTimingDigest,
+    ProxyProtocolAddrsDigest, SocketDigest, TimingDigest, IO,
 };
 use crate::tls::{ssl, ssl::ConnectConfiguration, ssl::SslRef, ssl_sys::X509_V_ERR_INVALID_CALL};
 
@@ -131,7 +132,11 @@ where
     fn get_proxy_protocol_addrs_digest(&self) -> Option<Arc<ProxyProtocolAddrsDigest>> {
         self.get_ref().get_proxy_protocol_addrs_digest()
     }
-    fn set_proxy_protocol_addrs_digest(&mut self, proxy_protocol_addrs_digest: ProxyProtocolAddrsDigest) {
-        self.get_mut().set_proxy_protocol_addrs_digest(proxy_protocol_addrs_digest)
+    fn set_proxy_protocol_addrs_digest(
+        &mut self,
+        proxy_protocol_addrs_digest: ProxyProtocolAddrsDigest,
+    ) {
+        self.get_mut()
+            .set_proxy_protocol_addrs_digest(proxy_protocol_addrs_digest)
     }
 }

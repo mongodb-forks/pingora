@@ -90,9 +90,10 @@ impl TlsSettings {
         }
 
         if self.allow_serialization {
-            builder.set_serialization_version(SerializationVersion::V1).expect("could not init serialization");
+            builder
+                .set_serialization_version(SerializationVersion::V1)
+                .expect("could not init serialization");
         }
-        
 
         let config = builder.build().unwrap();
         let connection_builder = S2NConnectionBuilder {

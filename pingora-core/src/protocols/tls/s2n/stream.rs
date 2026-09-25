@@ -16,8 +16,8 @@ use crate::protocols::digest::TimingDigest;
 use crate::protocols::raw_connect::ProxyDigest;
 use crate::protocols::tls::SslDigest;
 use crate::protocols::{
-    GetProxyDigest, GetProxyProtocolAddrsDigest, GetSocketDigest, GetTimingDigest, ProxyProtocolAddrsDigest, Peek, Shutdown, SocketDigest, Ssl, UniqueID,
-    UniqueIDType, ALPN,
+    GetProxyDigest, GetProxyProtocolAddrsDigest, GetSocketDigest, GetTimingDigest, Peek,
+    ProxyProtocolAddrsDigest, Shutdown, SocketDigest, Ssl, UniqueID, UniqueIDType, ALPN,
 };
 use crate::tls::TlsStream as S2NTlsStream;
 use crate::utils::tls::get_organization_serial_bytes;
@@ -286,8 +286,12 @@ where
     fn get_proxy_protocol_addrs_digest(&self) -> Option<Arc<ProxyProtocolAddrsDigest>> {
         self.get_ref().get_proxy_protocol_addrs_digest()
     }
-    fn set_proxy_protocol_addrs_digest(&mut self, proxy_protocol_addrs_digest: ProxyProtocolAddrsDigest) {
-        self.get_mut().set_proxy_protocol_addrs_digest(proxy_protocol_addrs_digest)
+    fn set_proxy_protocol_addrs_digest(
+        &mut self,
+        proxy_protocol_addrs_digest: ProxyProtocolAddrsDigest,
+    ) {
+        self.get_mut()
+            .set_proxy_protocol_addrs_digest(proxy_protocol_addrs_digest)
     }
 }
 

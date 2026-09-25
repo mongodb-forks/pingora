@@ -242,7 +242,7 @@ pub enum V2Addresses {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-/// Stores the address block provided in a proxy protocol header 
+/// Stores the address block provided in a proxy protocol header
 pub enum ProxyProtocolAddrsDigest {
     V1AddrBlock(V1Addresses),
     V2AddrBlock(V2Addresses),
@@ -250,23 +250,38 @@ pub enum ProxyProtocolAddrsDigest {
 
 impl ProxyProtocolAddrsDigest {
     pub fn from_v1_ipv4(source: SocketAddrV4, destination: SocketAddrV4) -> Self {
-        ProxyProtocolAddrsDigest::V1AddrBlock(V1Addresses::Ipv4 { source, destination })
+        ProxyProtocolAddrsDigest::V1AddrBlock(V1Addresses::Ipv4 {
+            source,
+            destination,
+        })
     }
 
     pub fn from_v1_ipv6(source: SocketAddrV6, destination: SocketAddrV6) -> Self {
-        ProxyProtocolAddrsDigest::V1AddrBlock(V1Addresses::Ipv6 { source, destination })
+        ProxyProtocolAddrsDigest::V1AddrBlock(V1Addresses::Ipv6 {
+            source,
+            destination,
+        })
     }
 
     pub fn from_v2_ipv4(source: SocketAddrV4, destination: SocketAddrV4) -> Self {
-        ProxyProtocolAddrsDigest::V2AddrBlock(V2Addresses::Ipv4 { source, destination })
+        ProxyProtocolAddrsDigest::V2AddrBlock(V2Addresses::Ipv4 {
+            source,
+            destination,
+        })
     }
 
     pub fn from_v2_ipv6(source: SocketAddrV6, destination: SocketAddrV6) -> Self {
-        ProxyProtocolAddrsDigest::V2AddrBlock(V2Addresses::Ipv6 { source, destination })
+        ProxyProtocolAddrsDigest::V2AddrBlock(V2Addresses::Ipv6 {
+            source,
+            destination,
+        })
     }
 
     pub fn from_v2_unix(source: [u8; 108], destination: [u8; 108]) -> Self {
-        ProxyProtocolAddrsDigest::V2AddrBlock(V2Addresses::Unix { source, destination })
+        ProxyProtocolAddrsDigest::V2AddrBlock(V2Addresses::Unix {
+            source,
+            destination,
+        })
     }
 
     /// Returns `(source_ip, source_port, destination_ip, destination_port)` for
@@ -274,13 +289,19 @@ impl ProxyProtocolAddrsDigest {
     pub fn addrs_and_ports(&self) -> Result<(IpAddr, u16, IpAddr, u16)> {
         match self {
             ProxyProtocolAddrsDigest::V1AddrBlock(v1) => match v1 {
-                V1Addresses::Ipv4 { source, destination } => Ok((
+                V1Addresses::Ipv4 {
+                    source,
+                    destination,
+                } => Ok((
                     IpAddr::V4(*source.ip()),
                     source.port(),
                     IpAddr::V4(*destination.ip()),
                     destination.port(),
                 )),
-                V1Addresses::Ipv6 { source, destination } => Ok((
+                V1Addresses::Ipv6 {
+                    source,
+                    destination,
+                } => Ok((
                     IpAddr::V6(*source.ip()),
                     source.port(),
                     IpAddr::V6(*destination.ip()),
@@ -288,19 +309,28 @@ impl ProxyProtocolAddrsDigest {
                 )),
             },
             ProxyProtocolAddrsDigest::V2AddrBlock(v2) => match v2 {
-                V2Addresses::Ipv4 { source, destination } => Ok((
+                V2Addresses::Ipv4 {
+                    source,
+                    destination,
+                } => Ok((
                     IpAddr::V4(*source.ip()),
                     source.port(),
                     IpAddr::V4(*destination.ip()),
                     destination.port(),
                 )),
-                V2Addresses::Ipv6 { source, destination } => Ok((
+                V2Addresses::Ipv6 {
+                    source,
+                    destination,
+                } => Ok((
                     IpAddr::V6(*source.ip()),
                     source.port(),
                     IpAddr::V6(*destination.ip()),
                     destination.port(),
                 )),
-                V2Addresses::Unix { .. } => Error::e_explain(ErrorType::UnsupportedProxyProtocolAddr, "only IP addresses are supported over proxy protocol"),
+                V2Addresses::Unix { .. } => Error::e_explain(
+                    ErrorType::UnsupportedProxyProtocolAddr,
+                    "only IP addresses are supported over proxy protocol",
+                ),
             },
         }
     }
@@ -309,10 +339,16 @@ impl ProxyProtocolAddrsDigest {
 impl Display for V1Addresses {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
-            V1Addresses::Ipv4 { source, destination } => {
+            V1Addresses::Ipv4 {
+                source,
+                destination,
+            } => {
                 write!(f, "source: {source}, destination: {destination}")
             }
-            V1Addresses::Ipv6 { source, destination } => {
+            V1Addresses::Ipv6 {
+                source,
+                destination,
+            } => {
                 write!(f, "source: {source}, destination: {destination}")
             }
         }
@@ -322,13 +358,22 @@ impl Display for V1Addresses {
 impl Display for V2Addresses {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
-            V2Addresses::Ipv4 { source, destination } => {
+            V2Addresses::Ipv4 {
+                source,
+                destination,
+            } => {
                 write!(f, "source: {source}, destination: {destination}")
             }
-            V2Addresses::Ipv6 { source, destination } => {
+            V2Addresses::Ipv6 {
+                source,
+                destination,
+            } => {
                 write!(f, "source: {source}, destination: {destination}")
             }
-            V2Addresses::Unix { source, destination } => {
+            V2Addresses::Unix {
+                source,
+                destination,
+            } => {
                 let src = unix_addr_to_str(source);
                 let dst = unix_addr_to_str(destination);
                 write!(f, "source: {src}, destination: {dst}")
@@ -383,5 +428,9 @@ pub trait GetSocketDigest {
 /// The interface to set or return proxy protocol addr information
 pub trait GetProxyProtocolAddrsDigest {
     fn get_proxy_protocol_addrs_digest(&self) -> Option<Arc<ProxyProtocolAddrsDigest>>;
-    fn set_proxy_protocol_addrs_digest(&mut self, _proxy_protocol_addrs_digest: ProxyProtocolAddrsDigest) {}
+    fn set_proxy_protocol_addrs_digest(
+        &mut self,
+        _proxy_protocol_addrs_digest: ProxyProtocolAddrsDigest,
+    ) {
+    }
 }
