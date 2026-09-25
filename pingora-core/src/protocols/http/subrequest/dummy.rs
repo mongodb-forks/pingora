@@ -14,8 +14,8 @@
 
 use crate::protocols::raw_connect::ProxyDigest;
 use crate::protocols::{
-    GetProxyDigest, GetProxyProtocolAddrsDigest, GetSocketDigest, GetTimingDigest, Peek, ProxyProtocolAddrsDigest, SocketDigest, Ssl, TimingDigest,
-    UniqueID, UniqueIDType,
+    GetProxyDigest, GetProxyProtocolAddrsDigest, GetSocketDigest, GetTimingDigest, Peek,
+    ProxyProtocolAddrsDigest, SocketDigest, Ssl, TimingDigest, UniqueID, UniqueIDType,
 };
 use async_trait::async_trait;
 use core::pin::Pin;

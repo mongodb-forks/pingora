@@ -23,8 +23,8 @@ pub mod tls;
 mod windows;
 
 pub use digest::{
-    Digest, GetProxyDigest, GetProxyProtocolAddrsDigest, GetSocketDigest, GetTimingDigest, ProtoDigest, ProxyProtocolAddrsDigest, SocketDigest,
-    TimingDigest,
+    Digest, GetProxyDigest, GetProxyProtocolAddrsDigest, GetSocketDigest, GetTimingDigest,
+    ProtoDigest, ProxyProtocolAddrsDigest, SocketDigest, TimingDigest,
 };
 pub use l4::ext::TcpKeepalive;
 pub use tls::ALPN;
@@ -252,8 +252,9 @@ pub mod ext_test {
     use async_trait::async_trait;
 
     use super::{
-        raw_connect, GetProxyDigest, GetProxyProtocolAddrsDigest, GetSocketDigest, GetTimingDigest, Peek, ProxyProtocolAddrsDigest, Shutdown,
-        SocketDigest, Ssl, TimingDigest, UniqueID, UniqueIDType,
+        raw_connect, GetProxyDigest, GetProxyProtocolAddrsDigest, GetSocketDigest, GetTimingDigest,
+        Peek, ProxyProtocolAddrsDigest, Shutdown, SocketDigest, Ssl, TimingDigest, UniqueID,
+        UniqueIDType,
     };
 
     #[async_trait]

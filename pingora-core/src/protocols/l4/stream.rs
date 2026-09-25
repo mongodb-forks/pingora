@@ -40,8 +40,8 @@ use crate::protocols::l4::ext::{set_tcp_keepalive, TcpKeepalive};
 use crate::protocols::l4::virt;
 use crate::protocols::raw_connect::ProxyDigest;
 use crate::protocols::{
-    GetProxyDigest, GetProxyProtocolAddrsDigest, GetSocketDigest, GetTimingDigest, Peek, ProxyProtocolAddrsDigest, Shutdown, SocketDigest, Ssl,
-    TimingDigest, UniqueID, UniqueIDType,
+    GetProxyDigest, GetProxyProtocolAddrsDigest, GetSocketDigest, GetTimingDigest, Peek,
+    ProxyProtocolAddrsDigest, Shutdown, SocketDigest, Ssl, TimingDigest, UniqueID, UniqueIDType,
 };
 use crate::upstreams::peer::Tracer;
 
@@ -463,7 +463,7 @@ impl Stream {
             _ => None,
         }
     }
-    
+
     pub async fn flush_buf_stream(&mut self) -> io::Result<()> {
         self.stream_mut().flush().await
     }
@@ -657,7 +657,10 @@ impl GetProxyProtocolAddrsDigest for Stream {
         self.proxy_protocol_addrs_digest.clone()
     }
 
-    fn set_proxy_protocol_addrs_digest(&mut self, proxy_protocol_addrs_digest: ProxyProtocolAddrsDigest) {
+    fn set_proxy_protocol_addrs_digest(
+        &mut self,
+        proxy_protocol_addrs_digest: ProxyProtocolAddrsDigest,
+    ) {
         self.proxy_protocol_addrs_digest = Some(Arc::new(proxy_protocol_addrs_digest))
     }
 }
