@@ -185,6 +185,10 @@ where
     pub fn ssl_digest(&self) -> Option<Arc<SslDigest>> {
         self.digest.clone()
     }
+
+    pub(crate) fn ssl_digest_mut(&mut self) -> Option<&mut SslDigest> {
+        self.digest.as_mut().and_then(Arc::get_mut)
+    }
 }
 
 impl<T> AsyncRead for TlsStream<T>

@@ -22,7 +22,8 @@ use pingora_s2n::{
 };
 use s2n_tls::enums::SerializationVersion;
 
-use crate::protocols::tls::server::handshake;
+use crate::listeners::TlsAcceptCallbacks;
+use crate::protocols::tls::server::{handshake, handshake_with_callback};
 use crate::protocols::tls::{CaType, PskConfig, PskType, S2NConnectionBuilder, TlsStream};
 use crate::protocols::{ALPN, IO};
 
@@ -38,10 +39,12 @@ pub struct TlsSettings {
     verify_client_hostname: bool,
     max_blinding_delay: Option<u32>,
     allow_serialization: bool,
+    callbacks: Option<TlsAcceptCallbacks>,
 }
 
 pub struct Acceptor {
     pub acceptor: TlsAcceptor<S2NConnectionBuilder>,
+    callbacks: Option<TlsAcceptCallbacks>,
 }
 
 impl TlsSettings {
@@ -105,6 +108,7 @@ impl TlsSettings {
 
         Acceptor {
             acceptor: TlsAcceptor::new(connection_builder),
+            callbacks: self.callbacks,
         }
     }
 
@@ -181,7 +185,14 @@ impl TlsSettings {
             verify_client_hostname: false,
             max_blinding_delay: None,
             allow_serialization: false,
+            callbacks: None,
         })
+    }
+
+    pub fn with_callbacks(callbacks: TlsAcceptCallbacks) -> Result<Self> {
+        let mut settings = Self::new();
+        settings.callbacks = Some(callbacks);
+        Ok(settings)
     }
 
     pub fn new() -> Self {
@@ -196,6 +207,7 @@ impl TlsSettings {
             verify_client_hostname: false,
             max_blinding_delay: None,
             allow_serialization: false,
+            callbacks: None,
         }
     }
 }
@@ -203,6 +215,10 @@ impl TlsSettings {
 impl Acceptor {
     pub async fn tls_handshake<S: IO>(&self, stream: S) -> Result<TlsStream<S>> {
         debug!("new tls session");
-        handshake(self, stream).await
+        if let Some(cb) = self.callbacks.as_ref() {
+            handshake_with_callback(self, stream, cb).await
+        } else {
+            handshake(self, stream).await
+        }
     }
 }
