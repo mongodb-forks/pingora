@@ -35,7 +35,7 @@ pub struct TlsSettings {
     alpn: Option<ALPN>,
     psk_config: Option<Arc<PskType>>,
     security_policy: Option<S2NPolicy>,
-    client_auth_required: bool,
+    client_auth_type: Option<ClientAuthType>,
     verify_client_hostname: bool,
     max_blinding_delay: Option<u32>,
     allow_serialization: bool,
@@ -59,11 +59,9 @@ impl TlsSettings {
             builder.set_max_blinding_delay(max_blinding_delay).unwrap();
         }
 
-        if self.client_auth_required {
-            builder
-                .set_client_auth_type(ClientAuthType::Required)
-                .unwrap();
-        }
+        builder
+            .set_client_auth_type(self.client_auth_type.unwrap_or(ClientAuthType::Optional))
+            .unwrap();
 
         if let Some(alpn) = self.alpn {
             builder
@@ -146,9 +144,10 @@ impl TlsSettings {
         self.key_path = Some(key_path.to_string());
     }
 
-    /// Require client certificate authentication (mTLS)
-    pub fn set_client_auth_required(&mut self, required: bool) {
-        self.client_auth_required = required;
+    /// Configure client authentication type. If not set, client
+    /// certificates will be optional.
+    pub fn set_client_auth_type(&mut self, auth_type: ClientAuthType) {
+        self.client_auth_type = Some(auth_type);
     }
 
     /// If validating client certificate, also verify client hostname (mTLS)
@@ -181,7 +180,7 @@ impl TlsSettings {
             security_policy: None,
             alpn: None,
             psk_config: None,
-            client_auth_required: false,
+            client_auth_type: None,
             verify_client_hostname: false,
             max_blinding_delay: None,
             allow_serialization: false,
@@ -203,7 +202,7 @@ impl TlsSettings {
             security_policy: None,
             alpn: None,
             psk_config: None,
-            client_auth_required: false,
+            client_auth_type: None,
             verify_client_hostname: false,
             max_blinding_delay: None,
             allow_serialization: false,
