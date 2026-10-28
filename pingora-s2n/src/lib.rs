@@ -30,14 +30,12 @@ pub use s2n_tls_tokio::{TlsAcceptor, TlsConnector, TlsStream};
 fn pem_blocks(raw: &[u8], keep: impl Fn(&str) -> bool) -> Result<Vec<u8>> {
     let config = pem::EncodeConfig::new().set_line_ending(pem::LineEnding::LF);
     let blocks = pem::parse_many(raw).or_err(ErrorType::InvalidCert, "invalid PEM")?;
-    Ok(
-        blocks
-            .iter()
-            .filter(|block| keep(block.tag()))
-            .map(|block| pem::encode_config(block, config))
-            .collect::<String>()
-            .into_bytes()
-    )
+    Ok(blocks
+        .iter()
+        .filter(|block| keep(block.tag()))
+        .map(|block| pem::encode_config(block, config))
+        .collect::<String>()
+        .into_bytes())
 }
 
 pub fn load_cert_chain_pem(file: &str) -> Result<Vec<u8>> {
@@ -46,7 +44,9 @@ pub fn load_cert_chain_pem(file: &str) -> Result<Vec<u8>> {
 
 pub fn load_certs_and_key_files(cert_file: &str, key_file: &str) -> Result<(Vec<u8>, Vec<u8>)> {
     let cert_bytes = load_cert_chain_pem(cert_file)?;
-    let key_bytes = pem_blocks(&load_pem_file(key_file)?, |tag| tag.ends_with("PRIVATE KEY"))?;
+    let key_bytes = pem_blocks(&load_pem_file(key_file)?, |tag| {
+        tag.ends_with("PRIVATE KEY")
+    })?;
     Ok((cert_bytes, key_bytes))
 }
 

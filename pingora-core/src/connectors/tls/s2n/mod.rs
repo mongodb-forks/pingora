@@ -21,7 +21,10 @@ use lru::LruCache;
 use pingora_error::{Error, Result};
 use pingora_error::{ErrorType::*, OrErr};
 
-use pingora_s2n::{load_cert_chain_pem, load_certs_and_key_files, ClientAuthType, Config, IgnoreVerifyHostnameCallback, TlsConnector as S2NTlsConnector, DEFAULT_TLS13};
+use pingora_s2n::{
+    load_cert_chain_pem, load_certs_and_key_files, ClientAuthType, Config,
+    IgnoreVerifyHostnameCallback, TlsConnector as S2NTlsConnector, DEFAULT_TLS13,
+};
 
 use crate::utils::tls::{CertKey, X509Pem};
 use crate::{
