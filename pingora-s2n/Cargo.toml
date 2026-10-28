@@ -19,3 +19,4 @@ pingora-error = { version = "0.8.1", path = "../pingora-error"}
 ring = "0.17.12"
 s2n-tls = "0.3"
 s2n-tls-tokio = "0.3"
+pem = "4.0.0"

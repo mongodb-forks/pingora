@@ -21,10 +21,7 @@ use lru::LruCache;
 use pingora_error::{Error, Result};
 use pingora_error::{ErrorType::*, OrErr};
 
-use pingora_s2n::{
-    load_pem_file, ClientAuthType, Config, IgnoreVerifyHostnameCallback,
-    TlsConnector as S2NTlsConnector, DEFAULT_TLS13,
-};
+use pingora_s2n::{load_cert_chain_pem, load_certs_and_key_files, ClientAuthType, Config, IgnoreVerifyHostnameCallback, TlsConnector as S2NTlsConnector, DEFAULT_TLS13};
 
 use crate::utils::tls::{CertKey, X509Pem};
 use crate::{
@@ -179,15 +176,14 @@ fn create_s2n_config(
 
     if let Some(conf) = connector_options.as_ref() {
         if let Some(ca_file_path) = conf.ca_file.as_ref() {
-            let ca_pem = load_pem_file(&ca_file_path)?;
+            let ca_pem = load_cert_chain_pem(ca_file_path)?;
             builder
                 .trust_pem(&ca_pem)
                 .or_err(InternalError, "failed to load ca cert")?;
         }
 
         if let Some((cert_file, key_file)) = conf.cert_key_file.as_ref() {
-            let cert = load_pem_file(cert_file)?;
-            let key = load_pem_file(key_file)?;
+            let (cert, key) = load_certs_and_key_files(cert_file, key_file)?;
             builder
                 .load_pem(&cert, &key)
                 .or_err(InternalError, "failed to load client cert")?;
