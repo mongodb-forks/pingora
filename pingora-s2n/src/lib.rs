@@ -39,7 +39,7 @@ fn pem_blocks(raw: &[u8], keep: impl Fn(&str) -> bool) -> Result<Vec<u8>> {
 }
 
 pub fn load_cert_chain_pem(file: &str) -> Result<Vec<u8>> {
-    pem_blocks(&load_pem_file(file)?, |tag| tag == "CERTIFICATE")
+    pem_blocks(&load_pem_file(file)?, |tag| tag.ends_with("CERTIFICATE"))
 }
 
 pub fn load_certs_and_key_files(cert_file: &str, key_file: &str) -> Result<(Vec<u8>, Vec<u8>)> {
@@ -50,7 +50,7 @@ pub fn load_certs_and_key_files(cert_file: &str, key_file: &str) -> Result<(Vec<
     Ok((cert_bytes, key_bytes))
 }
 
-fn load_pem_file(file: &str) -> Result<Vec<u8>> {
+pub fn load_pem_file(file: &str) -> Result<Vec<u8>> {
     if let Ok(bytes) = fs::read(file) {
         Ok(bytes)
     } else {
