@@ -179,7 +179,7 @@ fn create_s2n_config(
 
     if let Some(conf) = connector_options.as_ref() {
         if let Some(ca_file_path) = conf.ca_file.as_ref() {
-            let ca_pem = load_pem_file(ca_file_path)?;
+            let ca_pem = load_pem_file(&ca_file_path)?;
             builder
                 .trust_pem(&ca_pem)
                 .or_err(InternalError, "failed to load ca cert")?;
