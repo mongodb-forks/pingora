@@ -22,8 +22,8 @@ use pingora_error::{Error, Result};
 use pingora_error::{ErrorType::*, OrErr};
 
 use pingora_s2n::{
-    load_cert_chain_pem, load_certs_and_key_files, ClientAuthType, Config,
-    IgnoreVerifyHostnameCallback, TlsConnector as S2NTlsConnector, DEFAULT_TLS13,
+    load_certs_and_key_files, load_pem_file, ClientAuthType, Config, IgnoreVerifyHostnameCallback,
+    TlsConnector as S2NTlsConnector, DEFAULT_TLS13,
 };
 
 use crate::utils::tls::{CertKey, X509Pem};
@@ -179,7 +179,7 @@ fn create_s2n_config(
 
     if let Some(conf) = connector_options.as_ref() {
         if let Some(ca_file_path) = conf.ca_file.as_ref() {
-            let ca_pem = load_cert_chain_pem(ca_file_path)?;
+            let ca_pem = load_pem_file(ca_file_path)?;
             builder
                 .trust_pem(&ca_pem)
                 .or_err(InternalError, "failed to load ca cert")?;
