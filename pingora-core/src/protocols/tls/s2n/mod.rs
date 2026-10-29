@@ -69,7 +69,7 @@ impl Psk {
     }
 }
 
-pub struct TlsRef;
+pub type TlsRef = pingora_s2n::Connection;
 
 /// Custom s2n-tls connection builder. The s2n-tls-tokio crate doesn't expose
 /// a higher level api to configure private shared keys on a TLS connection.
