@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use pingora_error::{Error, ErrorType, Result};
+use pingora_error::{Error, ErrorType, OrErr, Result};
 use std::fs;
 
 pub use s2n_tls::{
@@ -26,9 +26,27 @@ pub use s2n_tls::{
 };
 pub use s2n_tls_tokio::{TlsAcceptor, TlsConnector, TlsStream};
 
+/// Returns PEM blocks in `raw` with label satisfying `keep(label)`.
+fn pem_blocks(raw: &[u8], keep: impl Fn(&str) -> bool) -> Result<Vec<u8>> {
+    let config = pem::EncodeConfig::new().set_line_ending(pem::LineEnding::LF);
+    let blocks = pem::parse_many(raw).or_err(ErrorType::InvalidCert, "invalid PEM")?;
+    Ok(blocks
+        .iter()
+        .filter(|block| keep(block.tag()))
+        .map(|block| pem::encode_config(block, config))
+        .collect::<String>()
+        .into_bytes())
+}
+
+pub fn load_cert_chain_pem(file: &str) -> Result<Vec<u8>> {
+    pem_blocks(&load_pem_file(file)?, |tag| tag.ends_with("CERTIFICATE"))
+}
+
 pub fn load_certs_and_key_files(cert_file: &str, key_file: &str) -> Result<(Vec<u8>, Vec<u8>)> {
-    let cert_bytes = load_pem_file(cert_file)?;
-    let key_bytes = load_pem_file(key_file)?;
+    let cert_bytes = load_cert_chain_pem(cert_file)?;
+    let key_bytes = pem_blocks(&load_pem_file(key_file)?, |tag| {
+        tag.ends_with("PRIVATE KEY")
+    })?;
     Ok((cert_bytes, key_bytes))
 }
 

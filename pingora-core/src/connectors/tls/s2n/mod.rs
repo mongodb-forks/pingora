@@ -22,7 +22,7 @@ use pingora_error::{Error, Result};
 use pingora_error::{ErrorType::*, OrErr};
 
 use pingora_s2n::{
-    load_pem_file, ClientAuthType, Config, IgnoreVerifyHostnameCallback,
+    load_certs_and_key_files, load_pem_file, ClientAuthType, Config, IgnoreVerifyHostnameCallback,
     TlsConnector as S2NTlsConnector, DEFAULT_TLS13,
 };
 
@@ -186,8 +186,7 @@ fn create_s2n_config(
         }
 
         if let Some((cert_file, key_file)) = conf.cert_key_file.as_ref() {
-            let cert = load_pem_file(cert_file)?;
-            let key = load_pem_file(key_file)?;
+            let (cert, key) = load_certs_and_key_files(cert_file, key_file)?;
             builder
                 .load_pem(&cert, &key)
                 .or_err(InternalError, "failed to load client cert")?;
