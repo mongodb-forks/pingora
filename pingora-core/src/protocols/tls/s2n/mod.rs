@@ -20,7 +20,7 @@ use std::{
     hash::{Hash, Hasher},
     sync::Arc,
 };
-
+use std::fmt::Debug;
 use pingora_s2n::{
     Config, Connection, ConnectionBuilder, Mode, Psk as S2NPsk, PskHmac, S2NError, S2NPolicy,
 };
@@ -71,6 +71,24 @@ impl Psk {
 
 pub type TlsRef = pingora_s2n::Connection;
 
+#[derive(Clone)]
+pub struct ConfigProvider(Arc<dyn Fn() -> Config + Send + Sync>);
+impl ConfigProvider {
+    pub fn new<F: Fn() -> Config + Send + Sync + 'static>(f: F) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn get(&self) -> Config {
+        (self.0)()
+    }
+}
+
+impl Debug for ConfigProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "ConfigProvider")
+    }
+}
+
 /// Custom s2n-tls connection builder. The s2n-tls-tokio crate doesn't expose
 /// a higher level api to configure private shared keys on a TLS connection.
 ///
@@ -80,6 +98,7 @@ pub type TlsRef = pingora_s2n::Connection;
 #[derive(Debug, Clone)]
 pub struct S2NConnectionBuilder {
     pub config: Config,
+    pub config_provider: Option<ConfigProvider>,
     pub psk_config: Option<Arc<PskConfig>>,
     pub security_policy: Option<S2NPolicy>,
     pub allow_serialization: bool,
@@ -89,7 +108,11 @@ impl ConnectionBuilder for S2NConnectionBuilder {
     type Output = Connection;
     fn build_connection(&self, mode: Mode) -> std::result::Result<Self::Output, S2NError> {
         let mut conn = Connection::new(mode);
-        conn.set_config(self.config.clone())?;
+        let config = match &self.config_provider {
+            Some(provider) => provider.get(),
+            None => self.config.clone(),
+        };
+        conn.set_config(config)?;
 
         if let Some(psk_config) = &self.psk_config {
             for psk in psk_config.keys.iter() {

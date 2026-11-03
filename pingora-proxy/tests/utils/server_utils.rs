@@ -899,6 +899,7 @@ impl PskTlsServer {
 
         let connection_builder = S2NConnectionBuilder {
             config: config.clone(),
+            config_provider: None,
             psk_config: Some(psk_config.clone()),
             security_policy: None,
             allow_serialization: false,

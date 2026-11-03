@@ -146,6 +146,7 @@ where
 
     let connection_builder = S2NConnectionBuilder {
         config: config,
+        config_provider: None,
         psk_config: peer.get_psk().cloned(),
         security_policy: Some(security_policy.clone()),
         allow_serialization: false,
