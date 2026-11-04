@@ -52,7 +52,6 @@ pub struct Acceptor {
 }
 
 impl TlsSettings {
-
     /// Attempt to build a config, returning an error on failure.
     /// Used for per-connection configs
     pub fn build_config(&self) -> Result<Config> {
