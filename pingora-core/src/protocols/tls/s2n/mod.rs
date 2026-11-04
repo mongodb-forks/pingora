@@ -23,6 +23,7 @@ use std::{
     hash::{Hash, Hasher},
     sync::Arc,
 };
+use std::error::Error;
 pub use stream::*;
 
 use crate::utils::tls::X509Pem;
@@ -70,14 +71,16 @@ impl Psk {
 
 pub type TlsRef = pingora_s2n::Connection;
 
+pub type ConfigProviderError = Box<dyn Error + Send + Sync + 'static>;
 #[derive(Clone)]
-pub struct ConfigProvider(Arc<dyn Fn() -> Config + Send + Sync>);
+pub struct ConfigProvider(Arc<dyn Fn() -> Result<Config, ConfigProviderError> + Send + Sync>);
+
 impl ConfigProvider {
-    pub fn new<F: Fn() -> Config + Send + Sync + 'static>(f: F) -> Self {
+    pub fn new<F: Fn() -> Result<Config, ConfigProviderError> + Send + Sync + 'static>(f: F) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn get(&self) -> Config {
+    pub fn get(&self) -> Result<Config, ConfigProviderError> {
         (self.0)()
     }
 }
