@@ -83,7 +83,7 @@ impl ConfigProvider {
     }
 
     pub fn get(&self) -> Result<Config, ConfigProviderError> {
-        (self.0)()
+        self.0()
     }
 }
 
@@ -113,7 +113,7 @@ impl ConnectionBuilder for S2NConnectionBuilder {
     fn build_connection(&self, mode: Mode) -> std::result::Result<Self::Output, S2NError> {
         let mut conn = Connection::new(mode);
         let config = match &self.config_provider {
-            Some(provider) => provider.get(),
+            Some(provider) => provider.get().map_err(S2NError::application)?,
             None => self.config.clone(),
         };
         conn.set_config(config)?;

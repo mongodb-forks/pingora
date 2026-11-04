@@ -122,16 +122,11 @@ impl TlsSettings {
     }
 
     /// Build a new acceptor and config, panicking on failure
-    /// Attempts to use `config_provider` if possible to get a fresh config, falls back to
-    /// `build_config`
     pub fn build(self) -> Acceptor {
-        let config = match &self.config_provider {
-            Some(provider) => provider.get(),
-            None => self.build_config().unwrap(),
-        };
+        let config = self.build_config().unwrap();
 
         let connection_builder = S2NConnectionBuilder {
-            config,
+            config: self.build_config().unwrap(),
             config_provider: self.config_provider,
             psk_config: self.psk_config.clone(),
             security_policy: Some(self.security_policy.unwrap_or(DEFAULT_TLS13)),
@@ -144,7 +139,9 @@ impl TlsSettings {
         }
     }
 
-    /// Set a per-connection provider for a new configuration
+    /// Supply the s2n `Config` (cert, key, CA) per connection so they can be
+    /// rotated at runtime. An `Err` fails that connection. Cert/CA setters on
+    /// this `TlsSettings` are ignored when a provider is set.
     pub fn set_config_provider(&mut self, provider: ConfigProvider) {
         self.config_provider = Some(provider);
     }
