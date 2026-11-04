@@ -101,7 +101,9 @@ impl TlsSettings {
 
         // In-memory PEM takes precedence over parsed `CaType`
         let ca = match (&self.ca_pem, &self.ca) {
-            (Some(ca_pem), _) => Some(parse_cert_chain_pem(ca_pem).or_err(InternalError, "failed to parse CA PEM")?),
+            (Some(ca_pem), _) => {
+                Some(parse_cert_chain_pem(ca_pem).or_err(InternalError, "failed to parse CA PEM")?)
+            }
             (None, Some(ca)) => Some(ca.raw_pem.clone()),
             _ => None,
         };
@@ -167,7 +169,6 @@ impl TlsSettings {
         self.ca = Some(ca);
     }
 
-    
     pub fn set_ca_pem(&mut self, ca_pem: &[u8]) {
         self.ca_pem = Some(ca_pem.to_vec());
     }
