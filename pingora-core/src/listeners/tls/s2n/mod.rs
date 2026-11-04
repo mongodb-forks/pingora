@@ -35,6 +35,7 @@ pub struct TlsSettings {
     key_path: Option<String>,
     cert_pem: Option<(Vec<u8>, Vec<u8>)>,
     ca: Option<CaType>,
+    ca_pem: Option<Vec<u8>>,
     alpn: Option<ALPN>,
     psk_config: Option<Arc<PskType>>,
     security_policy: Option<S2NPolicy>,
@@ -98,9 +99,16 @@ impl TlsSettings {
                 .or_err(InternalError, "invalid certificate or private key")?;
         }
 
-        if let Some(ca) = &self.ca {
+        // In-memory PEM takes precedence over parsed `CaType`
+        let ca = match (&self.ca_pem, &self.ca) {
+            (Some(ca_pem), _) => Some(parse_cert_chain_pem(ca_pem).or_err(InternalError, "failed to parse CA PEM")?),
+            (None, Some(ca)) => Some(ca.raw_pem.clone()),
+            _ => None,
+        };
+
+        if let Some(ca) = ca {
             builder
-                .trust_pem(&ca.raw_pem)
+                .trust_pem(&ca)
                 .or_err(InternalError, "invalid ca pem")?;
         }
 
@@ -123,8 +131,6 @@ impl TlsSettings {
 
     /// Build a new acceptor and config, panicking on failure
     pub fn build(self) -> Acceptor {
-        let config = self.build_config().unwrap();
-
         let connection_builder = S2NConnectionBuilder {
             config: self.build_config().unwrap(),
             config_provider: self.config_provider,
@@ -159,6 +165,11 @@ impl TlsSettings {
     /// Configure CA to use for mTLS
     pub fn set_ca(&mut self, ca: CaType) {
         self.ca = Some(ca);
+    }
+
+    
+    pub fn set_ca_pem(&mut self, ca_pem: &[u8]) {
+        self.ca_pem = Some(ca_pem.to_vec());
     }
 
     /// Configure pre-shared keys to use for TLS-PSK handshake
@@ -220,6 +231,7 @@ impl TlsSettings {
             key_path: Some(key_path.to_string()),
             cert_pem: None,
             ca: None,
+            ca_pem: None,
             security_policy: None,
             alpn: None,
             psk_config: None,
@@ -244,6 +256,7 @@ impl TlsSettings {
             key_path: None,
             cert_pem: None,
             ca: None,
+            ca_pem: None,
             security_policy: None,
             alpn: None,
             psk_config: None,
