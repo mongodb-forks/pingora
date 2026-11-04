@@ -19,11 +19,11 @@ mod stream;
 use pingora_s2n::{
     Config, Connection, ConnectionBuilder, Mode, Psk as S2NPsk, PskHmac, S2NError, S2NPolicy,
 };
+use std::error::Error;
 use std::{
     hash::{Hash, Hasher},
     sync::Arc,
 };
-use std::error::Error;
 pub use stream::*;
 
 use crate::utils::tls::X509Pem;
@@ -76,7 +76,9 @@ pub type ConfigProviderError = Box<dyn Error + Send + Sync + 'static>;
 pub struct ConfigProvider(Arc<dyn Fn() -> Result<Config, ConfigProviderError> + Send + Sync>);
 
 impl ConfigProvider {
-    pub fn new<F: Fn() -> Result<Config, ConfigProviderError> + Send + Sync + 'static>(f: F) -> Self {
+    pub fn new<F: Fn() -> Result<Config, ConfigProviderError> + Send + Sync + 'static>(
+        f: F,
+    ) -> Self {
         Self(Arc::new(f))
     }
 
