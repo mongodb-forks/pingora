@@ -34,6 +34,7 @@ use pingora_cache::{
 };
 use pingora_core::apps::{HttpServerApp, HttpServerOptions};
 use pingora_core::modules::http::compression::ResponseCompression;
+use pingora_core::protocols::tls::CommonTlsOptions;
 use pingora_core::protocols::{
     http::error_resp::gen_error_response, l4::socket::SocketAddr, Digest,
 };
@@ -898,11 +899,11 @@ impl PskTlsServer {
         let config = config_builder.build().unwrap();
 
         let connection_builder = S2NConnectionBuilder {
-            config: config.clone(),
+            config: Some(config),
             config_provider: None,
+            common: CommonTlsOptions::default(),
             psk_config: Some(psk_config.clone()),
             security_policy: None,
-            allow_serialization: false,
         };
 
         let acceptor = TlsAcceptor::new(connection_builder);

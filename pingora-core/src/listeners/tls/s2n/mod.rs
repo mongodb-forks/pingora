@@ -17,17 +17,15 @@ use std::sync::Arc;
 use crate::listeners::TlsAcceptCallbacks;
 use crate::protocols::tls::server::{handshake, handshake_with_callback};
 use crate::protocols::tls::{
-    CaType, ConfigProvider, PskConfig, PskType, S2NConnectionBuilder, TlsStream,
+    CaType, CommonTlsOptions, ConfigProvider, PskConfig, PskType, S2NConnectionBuilder, TlsStream,
 };
 use crate::protocols::{ALPN, IO};
 use log::debug;
 use pingora_error::{ErrorType::InternalError, OrErr, Result};
 use pingora_s2n::{
     load_certs_and_key_files, parse_cert_chain_pem, parse_private_key_pem, ClientAuthType, Config,
-    IgnoreVerifyHostnameCallback, S2NPolicy, TlsAcceptor, DEFAULT_TLS13,
+    ConfigBuilder, S2NPolicy, TlsAcceptor, DEFAULT_TLS13,
 };
-use s2n_tls::connection::Connection;
-use s2n_tls::enums::SerializationVersion;
 
 /// The TLS settings of a listening endpoint
 pub struct TlsSettings {
@@ -53,26 +51,21 @@ pub struct Acceptor {
 }
 
 impl TlsSettings {
+    fn common_options(&self) -> CommonTlsOptions {
+        CommonTlsOptions {
+            max_blinding_delay: self.max_blinding_delay,
+            client_auth_type: self.client_auth_type,
+            alpn: self.alpn.clone(),
+            verify_client_hostname: self.verify_client_hostname,
+            allow_serialization: self.allow_serialization,
+        }
+    }
+
     /// Attempt to build a config, returning an error on failure.
     /// Used for per-connection configs
     pub fn build_config(&self) -> Result<Config> {
         let mut builder = Config::builder();
-
-        if let Some(max_blinding_delay) = self.max_blinding_delay {
-            builder
-                .set_max_blinding_delay(max_blinding_delay)
-                .or_err(InternalError, "failed to set max blinding delay")?;
-        }
-
-        builder
-            .set_client_auth_type(self.client_auth_type.unwrap_or(ClientAuthType::Optional))
-            .or_err(InternalError, "failed to set client auth type")?;
-
-        if let Some(alpn) = &self.alpn {
-            builder
-                .set_application_protocol_preference(alpn.to_wire_protocols())
-                .or_err(InternalError, "failed to set ALPN")?;
-        }
+        self.common_options().apply(&mut builder)?;
 
         // In-memory PEM takes precedence over reading files
         let certs = match (&self.cert_pem, &self.cert_path, &self.key_path) {
@@ -80,17 +73,14 @@ impl TlsSettings {
                 parse_cert_chain_pem(cert).or_err(InternalError, "failed to parse cert chain")?,
                 parse_private_key_pem(key).or_err(InternalError, "failed to parse private key")?,
             )),
-            (None, Some(cert_path), Some(key_path)) => {
-                Some(load_certs_and_key_files(&cert_path, &key_path).or_err_with(
-                    InternalError,
-                    || {
-                        format!(
-                            "Failed to load provided certificates \"{}\" or key \"{}\".",
-                            cert_path, key_path
-                        )
-                    },
-                )?)
-            }
+            (None, Some(cert_path), Some(key_path)) => Some(
+                load_certs_and_key_files(cert_path, key_path).or_err_with(InternalError, || {
+                    format!(
+                        "Failed to load provided certificates \"{}\" or key \"{}\".",
+                        cert_path, key_path
+                    )
+                })?,
+            ),
             _ => None,
         };
         if let Some((cert, key)) = certs {
@@ -113,19 +103,6 @@ impl TlsSettings {
                 .trust_pem(&ca)
                 .or_err(InternalError, "invalid ca pem")?;
         }
-
-        if !self.verify_client_hostname {
-            builder
-                .set_verify_host_callback(IgnoreVerifyHostnameCallback::new())
-                .or_err(InternalError, "failed to set verify host callback")?;
-        }
-
-        if self.allow_serialization {
-            builder
-                .set_serialization_version(SerializationVersion::V1)
-                .or_err(InternalError, "could not init serialization")?;
-        }
-
         builder
             .build()
             .or_err(InternalError, "failed to build s2n config")
@@ -133,12 +110,18 @@ impl TlsSettings {
 
     /// Build a new acceptor and config, panicking on failure
     pub fn build(self) -> Acceptor {
+        let common = self.common_options();
+        // only use the provided config if no provider is given
+        let config = match self.config_provider {
+            Some(_) => None,
+            None => Some(self.build_config().unwrap()),
+        };
         let connection_builder = S2NConnectionBuilder {
-            config: self.build_config().unwrap(),
+            config,
             config_provider: self.config_provider,
+            common,
             psk_config: self.psk_config.clone(),
             security_policy: Some(self.security_policy.unwrap_or(DEFAULT_TLS13)),
-            allow_serialization: self.allow_serialization,
         };
 
         Acceptor {
@@ -147,9 +130,7 @@ impl TlsSettings {
         }
     }
 
-    /// Supply the s2n `Config` (cert, key, CA) per connection so they can be
-    /// rotated at runtime. An `Err` fails that connection. Cert/CA setters on
-    /// this `TlsSettings` are ignored when a provider is set.
+    /// Supply cert, key and CA material per connection so it can be rotated at runtime.
     pub fn set_config_provider(&mut self, provider: ConfigProvider) {
         self.config_provider = Some(provider);
     }
