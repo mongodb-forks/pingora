@@ -16,13 +16,13 @@ pub mod client;
 pub mod server;
 mod stream;
 
+use pingora_s2n::{
+    Config, Connection, ConnectionBuilder, Mode, Psk as S2NPsk, PskHmac, S2NError, S2NPolicy,
+};
+use std::fmt::Debug;
 use std::{
     hash::{Hash, Hasher},
     sync::Arc,
-};
-use std::fmt::Debug;
-use pingora_s2n::{
-    Config, Connection, ConnectionBuilder, Mode, Psk as S2NPsk, PskHmac, S2NError, S2NPolicy,
 };
 pub use stream::*;
 
