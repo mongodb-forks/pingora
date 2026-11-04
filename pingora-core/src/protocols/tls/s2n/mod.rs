@@ -19,7 +19,6 @@ mod stream;
 use pingora_s2n::{
     Config, Connection, ConnectionBuilder, Mode, Psk as S2NPsk, PskHmac, S2NError, S2NPolicy,
 };
-use std::fmt::Debug;
 use std::{
     hash::{Hash, Hasher},
     sync::Arc,
@@ -83,7 +82,7 @@ impl ConfigProvider {
     }
 }
 
-impl Debug for ConfigProvider {
+impl std::fmt::Debug for ConfigProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "ConfigProvider")
     }

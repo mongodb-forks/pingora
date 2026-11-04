@@ -52,6 +52,9 @@ pub struct Acceptor {
 }
 
 impl TlsSettings {
+
+    /// Attempt to build a config, returning an error on failure.
+    /// Used for per-connection configs
     pub fn build_config(&self) -> Result<Config> {
         let mut builder = Config::builder();
 
@@ -119,6 +122,9 @@ impl TlsSettings {
             .or_err(InternalError, "failed to build s2n config")
     }
 
+    /// Build a new acceptor and config, panicking on failure
+    /// Attempts to use `config_provider` if possible to get a fresh config, falls back to
+    /// `build_config`
     pub fn build(self) -> Acceptor {
         let config = match &self.config_provider {
             Some(provider) => provider.get(),
