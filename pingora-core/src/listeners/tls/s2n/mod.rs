@@ -24,7 +24,7 @@ use log::debug;
 use pingora_error::{ErrorType::InternalError, OrErr, Result};
 use pingora_s2n::{
     load_certs_and_key_files, parse_cert_chain_pem, parse_private_key_pem, ClientAuthType, Config,
-    ConfigBuilder, S2NPolicy, TlsAcceptor, DEFAULT_TLS13,
+    S2NPolicy, TlsAcceptor, DEFAULT_TLS13,
 };
 
 /// The TLS settings of a listening endpoint
@@ -113,7 +113,12 @@ impl TlsSettings {
         let common = self.common_options();
         // only use the provided config if no provider is given
         let config = match self.config_provider {
-            Some(_) => None,
+            Some(_) => {
+                // fail fast on bad common options
+                let mut test = Config::builder();
+                common.apply(&mut test).unwrap();
+                None
+            }
             None => Some(self.build_config().unwrap()),
         };
         let connection_builder = S2NConnectionBuilder {
