@@ -38,15 +38,17 @@ fn pem_blocks(raw: &[u8], keep: impl Fn(&str) -> bool) -> Result<Vec<u8>> {
         .into_bytes())
 }
 
-pub fn load_cert_chain_pem(file: &str) -> Result<Vec<u8>> {
-    pem_blocks(&load_pem_file(file)?, |tag| tag.ends_with("CERTIFICATE"))
+pub fn parse_cert_chain_pem(raw: &[u8]) -> Result<Vec<u8>> {
+    pem_blocks(raw, |tag| tag.ends_with("CERTIFICATE"))
+}
+
+pub fn parse_private_key_pem(raw: &[u8]) -> Result<Vec<u8>> {
+    pem_blocks(raw, |tag| tag.ends_with("PRIVATE KEY"))
 }
 
 pub fn load_certs_and_key_files(cert_file: &str, key_file: &str) -> Result<(Vec<u8>, Vec<u8>)> {
-    let cert_bytes = load_cert_chain_pem(cert_file)?;
-    let key_bytes = pem_blocks(&load_pem_file(key_file)?, |tag| {
-        tag.ends_with("PRIVATE KEY")
-    })?;
+    let cert_bytes = parse_cert_chain_pem(&load_pem_file(cert_file)?)?;
+    let key_bytes = parse_private_key_pem(&load_pem_file(key_file)?)?;
     Ok((cert_bytes, key_bytes))
 }
 

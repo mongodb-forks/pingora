@@ -26,6 +26,7 @@ use pingora_s2n::{
     TlsConnector as S2NTlsConnector, DEFAULT_TLS13,
 };
 
+use crate::protocols::tls::CommonTlsOptions;
 use crate::utils::tls::{CertKey, X509Pem};
 use crate::{
     connectors::ConnectorOptions,
@@ -145,10 +146,11 @@ where
     let config = tls_ctx.load_config(config_options)?;
 
     let connection_builder = S2NConnectionBuilder {
-        config: config,
+        config: Some(config),
+        config_provider: None,
+        common: CommonTlsOptions::default(),
         psk_config: peer.get_psk().cloned(),
         security_policy: Some(security_policy.clone()),
-        allow_serialization: false,
     };
 
     let domain = peer

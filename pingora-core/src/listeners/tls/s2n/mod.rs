@@ -14,24 +14,26 @@
 
 use std::sync::Arc;
 
-use log::debug;
-use pingora_error::Result;
-use pingora_s2n::{
-    load_certs_and_key_files, ClientAuthType, Config, IgnoreVerifyHostnameCallback, S2NPolicy,
-    TlsAcceptor, DEFAULT_TLS13,
-};
-use s2n_tls::enums::SerializationVersion;
-
 use crate::listeners::TlsAcceptCallbacks;
 use crate::protocols::tls::server::{handshake, handshake_with_callback};
-use crate::protocols::tls::{CaType, PskConfig, PskType, S2NConnectionBuilder, TlsStream};
+use crate::protocols::tls::{
+    CaType, CommonTlsOptions, ConfigProvider, PskConfig, PskType, S2NConnectionBuilder, TlsStream,
+};
 use crate::protocols::{ALPN, IO};
+use log::debug;
+use pingora_error::{ErrorType::InternalError, OrErr, Result};
+use pingora_s2n::{
+    load_certs_and_key_files, parse_cert_chain_pem, parse_private_key_pem, ClientAuthType, Config,
+    S2NPolicy, TlsAcceptor, DEFAULT_TLS13,
+};
 
 /// The TLS settings of a listening endpoint
 pub struct TlsSettings {
     cert_path: Option<String>,
     key_path: Option<String>,
+    cert_pem: Option<(Vec<u8>, Vec<u8>)>,
     ca: Option<CaType>,
+    ca_pem: Option<Vec<u8>>,
     alpn: Option<ALPN>,
     psk_config: Option<Arc<PskType>>,
     security_policy: Option<S2NPolicy>,
@@ -39,6 +41,7 @@ pub struct TlsSettings {
     verify_client_hostname: bool,
     max_blinding_delay: Option<u32>,
     allow_serialization: bool,
+    config_provider: Option<ConfigProvider>,
     callbacks: Option<TlsAcceptCallbacks>,
 }
 
@@ -48,66 +51,91 @@ pub struct Acceptor {
 }
 
 impl TlsSettings {
-    pub fn build(self) -> Acceptor {
-        let mut builder = Config::builder();
-
-        // Default security policy with TLS 1.3 support
-        // https://aws.github.io/s2n-tls/usage-guide/ch06-security-policies.html
-        let policy = self.security_policy.unwrap_or(DEFAULT_TLS13);
-
-        if let Some(max_blinding_delay) = self.max_blinding_delay {
-            builder.set_max_blinding_delay(max_blinding_delay).unwrap();
-        }
-
-        builder
-            .set_client_auth_type(self.client_auth_type.unwrap_or(ClientAuthType::Optional))
-            .unwrap();
-
-        if let Some(alpn) = self.alpn {
-            builder
-                .set_application_protocol_preference(alpn.to_wire_protocols())
-                .unwrap();
-        }
-
-        if let (Some(cert_path), Some(key_path)) = (self.cert_path, self.key_path) {
-            let Ok((cert, key)) = load_certs_and_key_files(&cert_path, &key_path) else {
-                panic!(
-                    "Failed to load provided certificates \"{}\" or key \"{}\".",
-                    cert_path, key_path
-                )
-            };
-
-            builder.load_pem(&cert, &key).unwrap();
-        }
-
-        if let Some(ca) = self.ca {
-            builder.trust_pem(&ca.raw_pem).expect("invalid ca pem");
-        }
-
-        if !self.verify_client_hostname {
-            builder
-                .set_verify_host_callback(IgnoreVerifyHostnameCallback::new())
-                .unwrap();
-        }
-
-        if self.allow_serialization {
-            builder
-                .set_serialization_version(SerializationVersion::V1)
-                .expect("could not init serialization");
-        }
-
-        let config = builder.build().unwrap();
-        let connection_builder = S2NConnectionBuilder {
-            config: config,
-            psk_config: self.psk_config.clone(),
-            security_policy: Some(policy.clone()),
+    fn common_options(&self) -> CommonTlsOptions {
+        CommonTlsOptions {
+            max_blinding_delay: self.max_blinding_delay,
+            client_auth_type: self.client_auth_type,
+            alpn: self.alpn.clone(),
+            verify_client_hostname: self.verify_client_hostname,
             allow_serialization: self.allow_serialization,
+        }
+    }
+
+    /// Attempt to build a config, returning an error on failure.
+    /// Used for per-connection configs
+    pub fn build_config(&self) -> Result<Config> {
+        let mut builder = Config::builder();
+        self.common_options().apply(&mut builder)?;
+
+        // In-memory PEM takes precedence over reading files
+        let certs = match (&self.cert_pem, &self.cert_path, &self.key_path) {
+            (Some((cert, key)), _, _) => Some((
+                parse_cert_chain_pem(cert).or_err(InternalError, "failed to parse cert chain")?,
+                parse_private_key_pem(key).or_err(InternalError, "failed to parse private key")?,
+            )),
+            (None, Some(cert_path), Some(key_path)) => Some(
+                load_certs_and_key_files(cert_path, key_path).or_err_with(InternalError, || {
+                    format!(
+                        "Failed to load provided certificates \"{}\" or key \"{}\".",
+                        cert_path, key_path
+                    )
+                })?,
+            ),
+            _ => None,
+        };
+        if let Some((cert, key)) = certs {
+            builder
+                .load_pem(&cert, &key)
+                .or_err(InternalError, "invalid certificate or private key")?;
+        }
+
+        // In-memory PEM takes precedence over parsed `CaType`
+        let ca = match (&self.ca_pem, &self.ca) {
+            (Some(ca_pem), _) => Some(ca_pem),
+            (None, Some(ca)) => Some(&ca.raw_pem),
+            _ => None,
+        };
+
+        if let Some(ca) = ca {
+            builder
+                .trust_pem(ca)
+                .or_err(InternalError, "invalid ca pem")?;
+        }
+        builder
+            .build()
+            .or_err(InternalError, "failed to build s2n config")
+    }
+
+    /// Build a new acceptor and config, panicking on failure
+    pub fn build(self) -> Acceptor {
+        let common = self.common_options();
+        // only use the provided config if no provider is given
+        let config = match self.config_provider {
+            Some(_) => {
+                // fail fast on bad common options
+                let mut test = Config::builder();
+                common.apply(&mut test).unwrap();
+                None
+            }
+            None => Some(self.build_config().unwrap()),
+        };
+        let connection_builder = S2NConnectionBuilder {
+            config,
+            config_provider: self.config_provider,
+            common,
+            psk_config: self.psk_config.clone(),
+            security_policy: Some(self.security_policy.unwrap_or(DEFAULT_TLS13)),
         };
 
         Acceptor {
             acceptor: TlsAcceptor::new(connection_builder),
             callbacks: self.callbacks,
         }
+    }
+
+    /// Supply cert, key and CA material per connection so it can be rotated at runtime.
+    pub fn set_config_provider(&mut self, provider: ConfigProvider) {
+        self.config_provider = Some(provider);
     }
 
     /// Enable HTTP/2 support for this endpoint, which is default off.
@@ -123,6 +151,10 @@ impl TlsSettings {
     /// Configure CA to use for mTLS
     pub fn set_ca(&mut self, ca: CaType) {
         self.ca = Some(ca);
+    }
+
+    pub fn set_ca_pem(&mut self, ca_pem: &[u8]) {
+        self.ca_pem = Some(ca_pem.to_vec());
     }
 
     /// Configure pre-shared keys to use for TLS-PSK handshake
@@ -142,6 +174,12 @@ impl TlsSettings {
     pub fn set_cert(&mut self, cert_path: &str, key_path: &str) {
         self.cert_path = Some(cert_path.to_string());
         self.key_path = Some(key_path.to_string());
+    }
+
+    /// The certificate and private key to use, as PEMs. takes precedence over filepaths if
+    /// both are present.
+    pub fn set_cert_pem(&mut self, cert: &[u8], key: &[u8]) {
+        self.cert_pem = Some((cert.to_vec(), key.to_vec()));
     }
 
     /// Configure client authentication type. If not set, client
@@ -176,7 +214,9 @@ impl TlsSettings {
         Ok(TlsSettings {
             cert_path: Some(cert_path.to_string()),
             key_path: Some(key_path.to_string()),
+            cert_pem: None,
             ca: None,
+            ca_pem: None,
             security_policy: None,
             alpn: None,
             psk_config: None,
@@ -184,6 +224,7 @@ impl TlsSettings {
             verify_client_hostname: false,
             max_blinding_delay: None,
             allow_serialization: false,
+            config_provider: None,
             callbacks: None,
         })
     }
@@ -198,7 +239,9 @@ impl TlsSettings {
         TlsSettings {
             cert_path: None,
             key_path: None,
+            cert_pem: None,
             ca: None,
+            ca_pem: None,
             security_policy: None,
             alpn: None,
             psk_config: None,
@@ -206,6 +249,7 @@ impl TlsSettings {
             verify_client_hostname: false,
             max_blinding_delay: None,
             allow_serialization: false,
+            config_provider: None,
             callbacks: None,
         }
     }
