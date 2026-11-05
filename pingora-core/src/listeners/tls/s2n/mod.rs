@@ -91,16 +91,14 @@ impl TlsSettings {
 
         // In-memory PEM takes precedence over parsed `CaType`
         let ca = match (&self.ca_pem, &self.ca) {
-            (Some(ca_pem), _) => {
-                Some(parse_cert_chain_pem(ca_pem).or_err(InternalError, "failed to parse CA PEM")?)
-            }
-            (None, Some(ca)) => Some(ca.raw_pem.clone()),
+            (Some(ca_pem), _) => Some(ca_pem),
+            (None, Some(ca)) => Some(&ca.raw_pem),
             _ => None,
         };
 
         if let Some(ca) = ca {
             builder
-                .trust_pem(&ca)
+                .trust_pem(ca)
                 .or_err(InternalError, "invalid ca pem")?;
         }
         builder
