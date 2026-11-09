@@ -9,7 +9,7 @@ jobs:
       matrix:
         # nightly, msrv, and latest stable
         toolchain: [nightly, 1.84.0, 1.91.1]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Only run on "pull_request" event for external PRs. This is to avoid
     # duplicate builds for PRs created from internal branches.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
