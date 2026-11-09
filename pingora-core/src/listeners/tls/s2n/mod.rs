@@ -61,14 +61,11 @@ impl TlsSettings {
         }
     }
 
-    /// Attempt to build a config, returning an error on failure.
-    /// Used for per-connection configs
-    pub fn build_config(&self) -> Result<Config> {
-        let mut builder = Config::builder();
-        self.common_options().apply(&mut builder)?;
-
+    /// Resolve the static cert/key/CA settings once (reading files, parsing PEMs) into a
+    /// provider.
+    fn static_provider(&self) -> Result<ConfigProvider> {
         // In-memory PEM takes precedence over reading files
-        let certs = match (&self.cert_pem, &self.cert_path, &self.key_path) {
+        let cert_and_key = match (&self.cert_pem, &self.cert_path, &self.key_path) {
             (Some((cert, key)), _, _) => Some((
                 parse_cert_chain_pem(cert).or_err(InternalError, "failed to parse cert chain")?,
                 parse_private_key_pem(key).or_err(InternalError, "failed to parse private key")?,
@@ -83,24 +80,31 @@ impl TlsSettings {
             ),
             _ => None,
         };
-        if let Some((cert, key)) = certs {
-            builder
-                .load_pem(&cert, &key)
-                .or_err(InternalError, "invalid certificate or private key")?;
-        }
-
         // In-memory PEM takes precedence over parsed `CaType`
-        let ca = match (&self.ca_pem, &self.ca) {
-            (Some(ca_pem), _) => Some(ca_pem),
-            (None, Some(ca)) => Some(&ca.raw_pem),
-            _ => None,
-        };
+        let ca = self
+            .ca_pem
+            .clone()
+            .or_else(|| self.ca.as_ref().map(|c| c.raw_pem.clone()));
 
-        if let Some(ca) = ca {
-            builder
-                .trust_pem(ca)
-                .or_err(InternalError, "invalid ca pem")?;
-        }
+        Ok(ConfigProvider::new(move |builder| {
+            if let Some((cert, key)) = &cert_and_key {
+                builder.load_pem(cert, key)?;
+            }
+            if let Some(ca) = &ca {
+                builder.trust_pem(ca)?;
+            }
+            Ok(())
+        }))
+    }
+
+    /// Attempt to build a config, returning an error on failure.
+    /// Used for per-connection configs
+    pub fn build_config(&self) -> Result<Config> {
+        let mut builder = Config::builder();
+        self.common_options().apply(&mut builder)?;
+        self.static_provider()?
+            .apply(&mut builder)
+            .or_err(InternalError, "invalid certificate, private key, or CA")?;
         builder
             .build()
             .or_err(InternalError, "failed to build s2n config")
@@ -109,19 +113,27 @@ impl TlsSettings {
     /// Build a new acceptor and config, panicking on failure
     pub fn build(self) -> Acceptor {
         let common = self.common_options();
-        // only use the provided config if no provider is given
-        let config = match self.config_provider {
-            Some(_) => {
-                // fail fast on bad common options
+
+        let (config, config_provider) = match self.config_provider.clone() {
+            Some(user_provider) => {
+                let static_provider = self.static_provider().unwrap();
+                // fail fast on bad common options and static material
                 let mut test = Config::builder();
                 common.apply(&mut test).unwrap();
-                None
+                static_provider.apply(&mut test).unwrap();
+
+                let provider = ConfigProvider::new(move |builder| {
+                    static_provider.apply(builder)?;
+                    user_provider.apply(builder)
+                });
+                (None, Some(provider))
             }
-            None => Some(self.build_config().unwrap()),
+            None => (Some(self.build_config().unwrap()), None),
         };
+
         let connection_builder = S2NConnectionBuilder {
             config,
-            config_provider: self.config_provider,
+            config_provider,
             common,
             psk_config: self.psk_config.clone(),
             security_policy: Some(self.security_policy.unwrap_or(DEFAULT_TLS13)),
