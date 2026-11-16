@@ -23,7 +23,7 @@ use crate::protocols::{ALPN, IO};
 use log::debug;
 use pingora_error::{ErrorType::InternalError, OrErr, Result};
 use pingora_s2n::{
-    load_certs_and_key_files, parse_cert_chain_pem, parse_private_key_pem, ClientAuthType,
+    load_certs_and_key_files, parse_cert_chain_pem, parse_private_key_pem, ClientAuthType, Config,
     S2NPolicy, TlsAcceptor, DEFAULT_TLS13,
 };
 
@@ -52,7 +52,7 @@ pub struct Acceptor {
 }
 
 impl TlsSettings {
-    pub fn server_options(&self) -> ServerTlsOptions {
+    fn server_options(&self) -> ServerTlsOptions {
         ServerTlsOptions {
             max_blinding_delay: self.max_blinding_delay,
             client_auth_type: self.client_auth_type,
@@ -62,50 +62,52 @@ impl TlsSettings {
         }
     }
 
+    /// Builds an s2n `Config` from the static settings: the cert/key and CA setters plus the
+    /// fixed listener options. Returns an error instead of panicking.
+    pub fn build_config(&self) -> Result<Config> {
+        let mut builder = self.server_options().config_builder()?;
+
+        // In-memory PEM takes precedence over reading files
+        let cert_and_key = match (&self.cert_pem, &self.cert_path) {
+            (Some((cert, key)), _) => Some((
+                parse_cert_chain_pem(cert).or_err(InternalError, "failed to parse cert chain")?,
+                parse_private_key_pem(key).or_err(InternalError, "failed to parse private key")?,
+            )),
+            (None, Some((cert_path, key_path))) => Some(
+                load_certs_and_key_files(cert_path, key_path).or_err_with(InternalError, || {
+                    format!(
+                        "Failed to load provided certificates \"{}\" or key \"{}\".",
+                        cert_path, key_path
+                    )
+                })?,
+            ),
+            _ => None,
+        };
+        if let Some((cert, key)) = cert_and_key {
+            builder.load_pem(&cert, &key).unwrap();
+        }
+
+        // In-memory PEM takes precedence over parsed `CaType`
+        let ca = self
+            .ca_pem
+            .as_ref()
+            .or_else(|| self.ca.as_ref().map(|c| &c.raw_pem));
+        if let Some(ca) = ca {
+            builder
+                .trust_pem(ca)
+                .or_err(InternalError, "failed to load CA")?;
+        }
+
+        builder
+            .build()
+            .or_err(InternalError, "failed to build s2n config")
+    }
+
     /// Build a new acceptor and config, panicking on failure
     pub fn build(self) -> Acceptor {
         let config_provider = match self.config_provider.clone() {
             Some(p) => p,
-            None => {
-                let mut builder = self.server_options().config_builder().unwrap();
-
-                // In-memory PEM takes precedence over reading files
-                let cert_and_key = match (&self.cert_pem, &self.cert_path) {
-                    (Some((cert, key)), _) => Some((
-                        parse_cert_chain_pem(cert)
-                            .or_err(InternalError, "failed to parse cert chain")
-                            .unwrap(),
-                        parse_private_key_pem(key)
-                            .or_err(InternalError, "failed to parse private key")
-                            .unwrap(),
-                    )),
-                    (None, Some((cert_path, key_path))) => Some(
-                        load_certs_and_key_files(cert_path, key_path)
-                            .or_err_with(InternalError, || {
-                                format!(
-                                    "Failed to load provided certificates \"{}\" or key \"{}\".",
-                                    cert_path, key_path
-                                )
-                            })
-                            .unwrap(),
-                    ),
-                    _ => None,
-                };
-                if let Some((cert, key)) = cert_and_key {
-                    builder.load_pem(&cert, &key).unwrap();
-                }
-
-                // In-memory PEM takes precedence over parsed `CaType`
-                let ca = self
-                    .ca_pem
-                    .as_ref()
-                    .or_else(|| self.ca.as_ref().map(|c| &c.raw_pem));
-                if let Some(ca) = ca {
-                    builder.trust_pem(ca).unwrap();
-                }
-
-                ConfigProvider::fixed(builder.build().unwrap())
-            }
+            None => ConfigProvider::fixed(self.build_config().unwrap()),
         };
 
         let connection_builder = S2NConnectionBuilder {
