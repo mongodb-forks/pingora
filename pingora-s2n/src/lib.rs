@@ -16,8 +16,8 @@ use pingora_error::{Error, ErrorType, OrErr, Result};
 use std::fs;
 
 pub use s2n_tls::{
-    callbacks::VerifyHostNameCallback,
-    config::{Builder as ConfigBuilder, Config},
+    callbacks::{ConnectionFuture, VerifyHostNameCallback},
+    config::{Builder as ConfigBuilder, Config, ConnectionInitializer},
     connection::{Builder as ConnectionBuilder, Connection},
     enums::{ClientAuthType, Mode, PskHmac},
     error::Error as S2NError,

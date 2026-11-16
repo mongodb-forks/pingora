@@ -24,8 +24,13 @@ use log::debug;
 use pingora_error::{ErrorType::InternalError, OrErr, Result};
 use pingora_s2n::{
     load_certs_and_key_files, parse_cert_chain_pem, parse_private_key_pem, ClientAuthType, Config,
-    S2NPolicy, TlsAcceptor, DEFAULT_TLS13,
+    ConfigBuilder, S2NError, S2NPolicy, TlsAcceptor, DEFAULT_TLS13,
 };
+use s2n_tls::config::ConnectionInitializer;
+
+/// Installs a per-connection initializer on a `ConfigBuilder`. Type-erased so that
+/// `build_config(&self)` can run repeatedly, cloning the initializer each time.
+type InitializerInstaller = Arc<dyn Fn(&mut ConfigBuilder) -> Result<(), S2NError> + Send + Sync>;
 
 /// The TLS settings of a listening endpoint
 pub struct TlsSettings {
@@ -43,6 +48,7 @@ pub struct TlsSettings {
     max_blinding_delay: Option<u32>,
     allow_serialization: bool,
     config_provider: Option<ConfigProvider>,
+    connection_initializer: Option<InitializerInstaller>,
     callbacks: Option<TlsAcceptCallbacks>,
 }
 
@@ -100,6 +106,10 @@ impl TlsSettings {
                 .or_err(InternalError, "failed to load CA")?;
         }
 
+        if let Some(init) = &self.connection_initializer {
+            init(&mut builder).or_err(InternalError, "failed to initialize connection")?;
+        }
+
         builder
             .build()
             .or_err(InternalError, "failed to build s2n config")
@@ -123,6 +133,15 @@ impl TlsSettings {
             acceptor: TlsAcceptor::new(connection_builder),
             callbacks: self.callbacks,
         }
+    }
+
+    /// Runs `init` once at the start of every connection negotiated with the `Config`
+    /// built from these settings.
+    pub fn set_connection_initializer<T: ConnectionInitializer + Clone>(&mut self, init: T) {
+        self.connection_initializer = Some(Arc::new(move |builder| {
+            builder.set_connection_initializer(init.clone())?;
+            Ok(())
+        }));
     }
 
     /// Sets closure to be called per-connection to get `Config`

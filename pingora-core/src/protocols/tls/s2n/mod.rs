@@ -119,6 +119,7 @@ impl ServerTlsOptions {
     }
 }
 
+/// Opaque per-connection value cap
 /// The closure here should be cheap, is called on every connection
 /// Should not build a config inside the closure, but instead return a pre-built one
 #[derive(Clone)]
