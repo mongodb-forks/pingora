@@ -110,9 +110,9 @@ impl TlsSettings {
 
         let connection_builder = S2NConnectionBuilder {
             config_provider,
-            allow_serialization: self.allow_serialization,
             psk_config: self.psk_config.clone(),
             security_policy: Some(self.security_policy.unwrap_or(DEFAULT_TLS13)),
+            allow_serialization: self.allow_serialization,
         };
 
         Acceptor {

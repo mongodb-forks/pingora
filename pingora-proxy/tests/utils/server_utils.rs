@@ -901,9 +901,9 @@ impl PskTlsServer {
 
         let connection_builder = S2NConnectionBuilder {
             config_provider: ConfigProvider::fixed(config),
-            allow_serialization: false,
             psk_config: Some(psk_config.clone()),
             security_policy: None,
+            allow_serialization: false,
         };
 
         let acceptor = TlsAcceptor::new(connection_builder);

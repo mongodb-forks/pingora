@@ -147,9 +147,9 @@ where
 
     let connection_builder = S2NConnectionBuilder {
         config_provider: ConfigProvider::fixed(config),
-        allow_serialization: false,
         psk_config: peer.get_psk().cloned(),
         security_policy: Some(security_policy.clone()),
+        allow_serialization: false,
     };
 
     let domain = peer

@@ -153,9 +153,9 @@ impl std::fmt::Debug for ConfigProvider {
 #[derive(Debug, Clone)]
 pub struct S2NConnectionBuilder {
     pub config_provider: ConfigProvider,
-    pub allow_serialization: bool,
     pub psk_config: Option<Arc<PskConfig>>,
     pub security_policy: Option<S2NPolicy>,
+    pub allow_serialization: bool,
 }
 
 impl ConnectionBuilder for S2NConnectionBuilder {
