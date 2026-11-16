@@ -9,6 +9,7 @@ jobs:
       matrix:
         # nightly, msrv, and latest stable
         toolchain: [nightly, 1.84.0, 1.91.1]
+    # openresty does not work on ubuntu-26 yet
     runs-on: ubuntu-24.04
     # Only run on "pull_request" event for external PRs. This is to avoid
     # duplicate builds for PRs created from internal branches.
