@@ -17,20 +17,21 @@ use std::sync::Arc;
 use crate::listeners::TlsAcceptCallbacks;
 use crate::protocols::tls::server::{handshake, handshake_with_callback};
 use crate::protocols::tls::{
-    CaType, CommonTlsOptions, ConfigProvider, PskConfig, PskType, S2NConnectionBuilder, TlsStream,
+    CaType, ConfigProvider, PskConfig, PskType, S2NConnectionBuilder, ServerTlsOptions, TlsStream,
 };
 use crate::protocols::{ALPN, IO};
 use log::debug;
 use pingora_error::{ErrorType::InternalError, OrErr, Result};
 use pingora_s2n::{
-    load_certs_and_key_files, parse_cert_chain_pem, parse_private_key_pem, ClientAuthType, Config,
+    load_certs_and_key_files, parse_cert_chain_pem, parse_private_key_pem, ClientAuthType,
     S2NPolicy, TlsAcceptor, DEFAULT_TLS13,
 };
 
 /// The TLS settings of a listening endpoint
 pub struct TlsSettings {
-    cert_path: Option<String>,
-    key_path: Option<String>,
+    // (cert_path, key_path)
+    cert_path: Option<(String, String)>,
+    // (cert_pem, key_pem)
     cert_pem: Option<(Vec<u8>, Vec<u8>)>,
     ca: Option<CaType>,
     ca_pem: Option<Vec<u8>>,
@@ -51,8 +52,8 @@ pub struct Acceptor {
 }
 
 impl TlsSettings {
-    fn common_options(&self) -> CommonTlsOptions {
-        CommonTlsOptions {
+    pub fn server_options(&self) -> ServerTlsOptions {
+        ServerTlsOptions {
             max_blinding_delay: self.max_blinding_delay,
             client_auth_type: self.client_auth_type,
             alpn: self.alpn.clone(),
@@ -61,80 +62,55 @@ impl TlsSettings {
         }
     }
 
-    /// Resolve the static cert/key/CA settings once (reading files, parsing PEMs) into a
-    /// provider.
-    fn static_provider(&self) -> Result<ConfigProvider> {
-        // In-memory PEM takes precedence over reading files
-        let cert_and_key = match (&self.cert_pem, &self.cert_path, &self.key_path) {
-            (Some((cert, key)), _, _) => Some((
-                parse_cert_chain_pem(cert).or_err(InternalError, "failed to parse cert chain")?,
-                parse_private_key_pem(key).or_err(InternalError, "failed to parse private key")?,
-            )),
-            (None, Some(cert_path), Some(key_path)) => Some(
-                load_certs_and_key_files(cert_path, key_path).or_err_with(InternalError, || {
-                    format!(
-                        "Failed to load provided certificates \"{}\" or key \"{}\".",
-                        cert_path, key_path
-                    )
-                })?,
-            ),
-            _ => None,
-        };
-        // In-memory PEM takes precedence over parsed `CaType`
-        let ca = self
-            .ca_pem
-            .clone()
-            .or_else(|| self.ca.as_ref().map(|c| c.raw_pem.clone()));
-
-        Ok(ConfigProvider::new(move |builder| {
-            if let Some((cert, key)) = &cert_and_key {
-                builder.load_pem(cert, key)?;
-            }
-            if let Some(ca) = &ca {
-                builder.trust_pem(ca)?;
-            }
-            Ok(())
-        }))
-    }
-
-    /// Attempt to build a config, returning an error on failure.
-    /// Used for per-connection configs
-    pub fn build_config(&self) -> Result<Config> {
-        let mut builder = Config::builder();
-        self.common_options().apply(&mut builder)?;
-        self.static_provider()?
-            .apply(&mut builder)
-            .or_err(InternalError, "invalid certificate, private key, or CA")?;
-        builder
-            .build()
-            .or_err(InternalError, "failed to build s2n config")
-    }
-
     /// Build a new acceptor and config, panicking on failure
     pub fn build(self) -> Acceptor {
-        let common = self.common_options();
+        let config_provider = match self.config_provider.clone() {
+            Some(p) => p,
+            None => {
+                let mut builder = self.server_options().config_builder().unwrap();
 
-        let (config, config_provider) = match self.config_provider.clone() {
-            Some(user_provider) => {
-                let static_provider = self.static_provider().unwrap();
-                // fail fast on bad common options and static material
-                let mut test = Config::builder();
-                common.apply(&mut test).unwrap();
-                static_provider.apply(&mut test).unwrap();
+                // In-memory PEM takes precedence over reading files
+                let cert_and_key = match (&self.cert_pem, &self.cert_path) {
+                    (Some((cert, key)), _) => Some((
+                        parse_cert_chain_pem(cert)
+                            .or_err(InternalError, "failed to parse cert chain")
+                            .unwrap(),
+                        parse_private_key_pem(key)
+                            .or_err(InternalError, "failed to parse private key")
+                            .unwrap(),
+                    )),
+                    (None, Some((cert_path, key_path))) => Some(
+                        load_certs_and_key_files(cert_path, key_path)
+                            .or_err_with(InternalError, || {
+                                format!(
+                                    "Failed to load provided certificates \"{}\" or key \"{}\".",
+                                    cert_path, key_path
+                                )
+                            })
+                            .unwrap(),
+                    ),
+                    _ => None,
+                };
+                if let Some((cert, key)) = cert_and_key {
+                    builder.load_pem(&cert, &key).unwrap();
+                }
 
-                let provider = ConfigProvider::new(move |builder| {
-                    static_provider.apply(builder)?;
-                    user_provider.apply(builder)
-                });
-                (None, Some(provider))
+                // In-memory PEM takes precedence over parsed `CaType`
+                let ca = self
+                    .ca_pem
+                    .as_ref()
+                    .or_else(|| self.ca.as_ref().map(|c| &c.raw_pem));
+                if let Some(ca) = ca {
+                    builder.trust_pem(ca).unwrap();
+                }
+
+                ConfigProvider::fixed(builder.build().unwrap())
             }
-            None => (Some(self.build_config().unwrap()), None),
         };
 
         let connection_builder = S2NConnectionBuilder {
-            config,
             config_provider,
-            common,
+            allow_serialization: self.allow_serialization,
             psk_config: self.psk_config.clone(),
             security_policy: Some(self.security_policy.unwrap_or(DEFAULT_TLS13)),
         };
@@ -145,7 +121,7 @@ impl TlsSettings {
         }
     }
 
-    /// Supply cert, key and CA material per connection so it can be rotated at runtime.
+    /// Sets closure to be called per-connection to get `Config`
     pub fn set_config_provider(&mut self, provider: ConfigProvider) {
         self.config_provider = Some(provider);
     }
@@ -184,8 +160,7 @@ impl TlsSettings {
 
     /// The certificate and private key to use for TLS connections
     pub fn set_cert(&mut self, cert_path: &str, key_path: &str) {
-        self.cert_path = Some(cert_path.to_string());
-        self.key_path = Some(key_path.to_string());
+        self.cert_path = Some((cert_path.to_string(), key_path.to_string()));
     }
 
     /// The certificate and private key to use, as PEMs. takes precedence over filepaths if
@@ -224,8 +199,7 @@ impl TlsSettings {
         Self: Sized,
     {
         Ok(TlsSettings {
-            cert_path: Some(cert_path.to_string()),
-            key_path: Some(key_path.to_string()),
+            cert_path: Some((cert_path.to_string(), key_path.to_string())),
             cert_pem: None,
             ca: None,
             ca_pem: None,
@@ -250,7 +224,6 @@ impl TlsSettings {
     pub fn new() -> Self {
         TlsSettings {
             cert_path: None,
-            key_path: None,
             cert_pem: None,
             ca: None,
             ca_pem: None,

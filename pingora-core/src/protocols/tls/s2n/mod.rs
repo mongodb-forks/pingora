@@ -25,7 +25,6 @@ use pingora_s2n::{
     Psk as S2NPsk, PskHmac, S2NError, S2NPolicy,
 };
 use s2n_tls::enums::{ClientAuthType, SerializationVersion};
-use std::error::Error;
 use std::{
     hash::{Hash, Hasher},
     sync::Arc,
@@ -75,9 +74,10 @@ impl Psk {
 
 pub type TlsRef = pingora_s2n::Connection;
 
-/// config settings that don't depend on cert/CA material, so will not change per-connection
+/// Config settings that are fixed for a given listener, cannot be set per-connection
 #[derive(Debug, Clone, Default)]
-pub struct CommonTlsOptions {
+#[non_exhaustive]
+pub struct ServerTlsOptions {
     pub max_blinding_delay: Option<u32>,
     pub client_auth_type: Option<ClientAuthType>,
     pub alpn: Option<ALPN>,
@@ -85,8 +85,10 @@ pub struct CommonTlsOptions {
     pub allow_serialization: bool,
 }
 
-impl CommonTlsOptions {
-    pub fn apply(&self, builder: &mut ConfigBuilder) -> pingora_error::Result<()> {
+impl ServerTlsOptions {
+    /// Returns a `ConfigBuilder` using the options set in `ServerTlsOptions`.
+    pub fn config_builder(&self) -> pingora_error::Result<ConfigBuilder> {
+        let mut builder = Config::builder();
         if let Some(max_blinding_delay) = self.max_blinding_delay {
             builder
                 .set_max_blinding_delay(max_blinding_delay)
@@ -114,27 +116,25 @@ impl CommonTlsOptions {
                 .set_serialization_version(SerializationVersion::V1)
                 .or_err(InternalError, "could not init serialization")?;
         }
-        Ok(())
+        Ok(builder)
     }
 }
 
-pub type ConfigProviderError = Box<dyn Error + Send + Sync + 'static>;
+/// The closure here should be cheap, is called on every connection
+/// Should not build a config inside the closure, but instead return a pre-built one
 #[derive(Clone)]
-pub struct ConfigProvider(
-    Arc<dyn Fn(&mut ConfigBuilder) -> Result<(), ConfigProviderError> + Send + Sync>,
-);
+pub struct ConfigProvider(Arc<dyn Fn() -> Config + Send + Sync>);
 
 impl ConfigProvider {
-    pub fn new<
-        F: Fn(&mut ConfigBuilder) -> Result<(), ConfigProviderError> + Send + Sync + 'static,
-    >(
-        f: F,
-    ) -> Self {
+    pub fn new<F: Fn() -> Config + Send + Sync + 'static>(f: F) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn apply(&self, builder: &mut ConfigBuilder) -> Result<(), ConfigProviderError> {
-        self.0(builder)
+    pub fn fixed(config: Config) -> Self {
+        Self::new(move || config.clone())
+    }
+    pub fn get(&self) -> Config {
+        self.0()
     }
 }
 
@@ -152,9 +152,8 @@ impl std::fmt::Debug for ConfigProvider {
 /// ```
 #[derive(Debug, Clone)]
 pub struct S2NConnectionBuilder {
-    pub config: Option<Config>,
-    pub config_provider: Option<ConfigProvider>,
-    pub common: CommonTlsOptions,
+    pub config_provider: ConfigProvider,
+    pub allow_serialization: bool,
     pub psk_config: Option<Arc<PskConfig>>,
     pub security_policy: Option<S2NPolicy>,
 }
@@ -163,21 +162,7 @@ impl ConnectionBuilder for S2NConnectionBuilder {
     type Output = Connection;
     fn build_connection(&self, mode: Mode) -> std::result::Result<Self::Output, S2NError> {
         let mut conn = Connection::new(mode);
-        let config = match (&self.config_provider, &self.config) {
-            (Some(provider), _) => {
-                let mut builder = Config::builder();
-                self.common
-                    .apply(&mut builder)
-                    .map_err(|e| S2NError::application(e))?;
-                provider
-                    .apply(&mut builder)
-                    .map_err(S2NError::application)?;
-                builder.build()?
-            }
-            (None, Some(config)) => config.clone(),
-            (None, None) => return Err(S2NError::application("no TLS config or provider".into())),
-        };
-        conn.set_config(config)?;
+        conn.set_config(self.config_provider.get())?;
 
         if let Some(psk_config) = &self.psk_config {
             for psk in psk_config.keys.iter() {
@@ -196,7 +181,7 @@ impl ConnectionBuilder for S2NConnectionBuilder {
         // If serialization is enabled, then receive buffering
         // should be turned off since this data isn't included
         // in the serialization.
-        if self.common.allow_serialization {
+        if self.allow_serialization {
             conn.set_receive_buffering(false)?;
         }
 
