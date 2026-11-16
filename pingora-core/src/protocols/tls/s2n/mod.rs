@@ -76,7 +76,6 @@ pub type TlsRef = pingora_s2n::Connection;
 
 /// Config settings that are fixed for a given listener, cannot be set per-connection
 #[derive(Debug, Clone, Default)]
-#[non_exhaustive]
 pub struct ServerTlsOptions {
     pub max_blinding_delay: Option<u32>,
     pub client_auth_type: Option<ClientAuthType>,
@@ -118,6 +117,8 @@ impl ServerTlsOptions {
         }
         Ok(builder)
     }
+
+
 }
 
 /// The closure here should be cheap, is called on every connection
