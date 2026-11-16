@@ -117,8 +117,6 @@ impl ServerTlsOptions {
         }
         Ok(builder)
     }
-
-
 }
 
 /// The closure here should be cheap, is called on every connection

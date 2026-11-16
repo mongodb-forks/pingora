@@ -84,7 +84,9 @@ impl TlsSettings {
             _ => None,
         };
         if let Some((cert, key)) = cert_and_key {
-            builder.load_pem(&cert, &key).or_err(InternalError, "failed to load cert")?;
+            builder
+                .load_pem(&cert, &key)
+                .or_err(InternalError, "failed to load cert")?;
         }
 
         // In-memory PEM takes precedence over parsed `CaType`
