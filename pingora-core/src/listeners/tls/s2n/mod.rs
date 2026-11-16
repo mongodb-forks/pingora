@@ -14,24 +14,32 @@
 
 use std::sync::Arc;
 
-use log::debug;
-use pingora_error::Result;
-use pingora_s2n::{
-    load_certs_and_key_files, ClientAuthType, Config, IgnoreVerifyHostnameCallback, S2NPolicy,
-    TlsAcceptor, DEFAULT_TLS13,
-};
-use s2n_tls::enums::SerializationVersion;
-
 use crate::listeners::TlsAcceptCallbacks;
 use crate::protocols::tls::server::{handshake, handshake_with_callback};
-use crate::protocols::tls::{CaType, PskConfig, PskType, S2NConnectionBuilder, TlsStream};
+use crate::protocols::tls::{
+    CaType, ConfigProvider, PskConfig, PskType, S2NConnectionBuilder, ServerTlsOptions, TlsStream,
+};
 use crate::protocols::{ALPN, IO};
+use log::debug;
+use pingora_error::{ErrorType::InternalError, OrErr, Result};
+use pingora_s2n::{
+    load_certs_and_key_files, parse_cert_chain_pem, parse_private_key_pem, ClientAuthType, Config,
+    ConfigBuilder, S2NError, S2NPolicy, TlsAcceptor, DEFAULT_TLS13,
+};
+use s2n_tls::config::ConnectionInitializer;
+
+/// Installs a per-connection initializer on a `ConfigBuilder`. Type-erased so that
+/// `build_config(&self)` can run repeatedly, cloning the initializer each time.
+type InitializerInstaller = Arc<dyn Fn(&mut ConfigBuilder) -> Result<(), S2NError> + Send + Sync>;
 
 /// The TLS settings of a listening endpoint
 pub struct TlsSettings {
-    cert_path: Option<String>,
-    key_path: Option<String>,
+    // (cert_path, key_path)
+    cert_path: Option<(String, String)>,
+    // (cert_pem, key_pem)
+    cert_pem: Option<(Vec<u8>, Vec<u8>)>,
     ca: Option<CaType>,
+    ca_pem: Option<Vec<u8>>,
     alpn: Option<ALPN>,
     psk_config: Option<Arc<PskType>>,
     security_policy: Option<S2NPolicy>,
@@ -39,6 +47,8 @@ pub struct TlsSettings {
     verify_client_hostname: bool,
     max_blinding_delay: Option<u32>,
     allow_serialization: bool,
+    config_provider: Option<ConfigProvider>,
+    connection_initializer: Option<InitializerInstaller>,
     callbacks: Option<TlsAcceptCallbacks>,
 }
 
@@ -48,59 +58,74 @@ pub struct Acceptor {
 }
 
 impl TlsSettings {
-    pub fn build(self) -> Acceptor {
-        let mut builder = Config::builder();
+    fn server_options(&self) -> ServerTlsOptions {
+        ServerTlsOptions {
+            max_blinding_delay: self.max_blinding_delay,
+            client_auth_type: self.client_auth_type,
+            alpn: self.alpn.clone(),
+            verify_client_hostname: self.verify_client_hostname,
+            allow_serialization: self.allow_serialization,
+        }
+    }
 
-        // Default security policy with TLS 1.3 support
-        // https://aws.github.io/s2n-tls/usage-guide/ch06-security-policies.html
-        let policy = self.security_policy.unwrap_or(DEFAULT_TLS13);
+    /// Builds an s2n `Config` from the static settings: the cert/key and CA setters plus the
+    /// fixed listener options. Returns an error instead of panicking.
+    pub fn build_config(&self) -> Result<Config> {
+        let mut builder = self.server_options().config_builder()?;
 
-        if let Some(max_blinding_delay) = self.max_blinding_delay {
-            builder.set_max_blinding_delay(max_blinding_delay).unwrap();
+        // In-memory PEM takes precedence over reading files
+        let cert_and_key = match (&self.cert_pem, &self.cert_path) {
+            (Some((cert, key)), _) => Some((
+                parse_cert_chain_pem(cert).or_err(InternalError, "failed to parse cert chain")?,
+                parse_private_key_pem(key).or_err(InternalError, "failed to parse private key")?,
+            )),
+            (None, Some((cert_path, key_path))) => Some(
+                load_certs_and_key_files(cert_path, key_path).or_err_with(InternalError, || {
+                    format!(
+                        "Failed to load provided certificates \"{}\" or key \"{}\".",
+                        cert_path, key_path
+                    )
+                })?,
+            ),
+            _ => None,
+        };
+        if let Some((cert, key)) = cert_and_key {
+            builder
+                .load_pem(&cert, &key)
+                .or_err(InternalError, "failed to load cert")?;
+        }
+
+        // In-memory PEM takes precedence over parsed `CaType`
+        let ca = self
+            .ca_pem
+            .as_ref()
+            .or_else(|| self.ca.as_ref().map(|c| &c.raw_pem));
+        if let Some(ca) = ca {
+            builder
+                .trust_pem(ca)
+                .or_err(InternalError, "failed to load CA")?;
+        }
+
+        if let Some(init) = &self.connection_initializer {
+            init(&mut builder).or_err(InternalError, "failed to initialize connection")?;
         }
 
         builder
-            .set_client_auth_type(self.client_auth_type.unwrap_or(ClientAuthType::Optional))
-            .unwrap();
+            .build()
+            .or_err(InternalError, "failed to build s2n config")
+    }
 
-        if let Some(alpn) = self.alpn {
-            builder
-                .set_application_protocol_preference(alpn.to_wire_protocols())
-                .unwrap();
-        }
+    /// Build a new acceptor and config, panicking on failure
+    pub fn build(self) -> Acceptor {
+        let config_provider = match self.config_provider.clone() {
+            Some(p) => p,
+            None => ConfigProvider::fixed(self.build_config().unwrap()),
+        };
 
-        if let (Some(cert_path), Some(key_path)) = (self.cert_path, self.key_path) {
-            let Ok((cert, key)) = load_certs_and_key_files(&cert_path, &key_path) else {
-                panic!(
-                    "Failed to load provided certificates \"{}\" or key \"{}\".",
-                    cert_path, key_path
-                )
-            };
-
-            builder.load_pem(&cert, &key).unwrap();
-        }
-
-        if let Some(ca) = self.ca {
-            builder.trust_pem(&ca.raw_pem).expect("invalid ca pem");
-        }
-
-        if !self.verify_client_hostname {
-            builder
-                .set_verify_host_callback(IgnoreVerifyHostnameCallback::new())
-                .unwrap();
-        }
-
-        if self.allow_serialization {
-            builder
-                .set_serialization_version(SerializationVersion::V1)
-                .expect("could not init serialization");
-        }
-
-        let config = builder.build().unwrap();
         let connection_builder = S2NConnectionBuilder {
-            config: config,
+            config_provider,
             psk_config: self.psk_config.clone(),
-            security_policy: Some(policy.clone()),
+            security_policy: Some(self.security_policy.unwrap_or(DEFAULT_TLS13)),
             allow_serialization: self.allow_serialization,
         };
 
@@ -108,6 +133,20 @@ impl TlsSettings {
             acceptor: TlsAcceptor::new(connection_builder),
             callbacks: self.callbacks,
         }
+    }
+
+    /// Runs `init` once at the start of every connection negotiated with the `Config`
+    /// built from these settings.
+    pub fn set_connection_initializer<T: ConnectionInitializer + Clone>(&mut self, init: T) {
+        self.connection_initializer = Some(Arc::new(move |builder| {
+            builder.set_connection_initializer(init.clone())?;
+            Ok(())
+        }));
+    }
+
+    /// Sets closure to be called per-connection to get `Config`
+    pub fn set_config_provider(&mut self, provider: ConfigProvider) {
+        self.config_provider = Some(provider);
     }
 
     /// Enable HTTP/2 support for this endpoint, which is default off.
@@ -125,6 +164,10 @@ impl TlsSettings {
         self.ca = Some(ca);
     }
 
+    pub fn set_ca_pem(&mut self, ca_pem: &[u8]) {
+        self.ca_pem = Some(ca_pem.to_vec());
+    }
+
     /// Configure pre-shared keys to use for TLS-PSK handshake
     /// https://datatracker.ietf.org/doc/html/rfc4279
     pub fn set_psk_config(&mut self, psk_config: PskConfig) {
@@ -140,8 +183,13 @@ impl TlsSettings {
 
     /// The certificate and private key to use for TLS connections
     pub fn set_cert(&mut self, cert_path: &str, key_path: &str) {
-        self.cert_path = Some(cert_path.to_string());
-        self.key_path = Some(key_path.to_string());
+        self.cert_path = Some((cert_path.to_string(), key_path.to_string()));
+    }
+
+    /// The certificate and private key to use, as PEMs. takes precedence over filepaths if
+    /// both are present.
+    pub fn set_cert_pem(&mut self, cert: &[u8], key: &[u8]) {
+        self.cert_pem = Some((cert.to_vec(), key.to_vec()));
     }
 
     /// Configure client authentication type. If not set, client
@@ -174,9 +222,10 @@ impl TlsSettings {
         Self: Sized,
     {
         Ok(TlsSettings {
-            cert_path: Some(cert_path.to_string()),
-            key_path: Some(key_path.to_string()),
+            cert_path: Some((cert_path.to_string(), key_path.to_string())),
+            cert_pem: None,
             ca: None,
+            ca_pem: None,
             security_policy: None,
             alpn: None,
             psk_config: None,
@@ -184,7 +233,9 @@ impl TlsSettings {
             verify_client_hostname: false,
             max_blinding_delay: None,
             allow_serialization: false,
+            config_provider: None,
             callbacks: None,
+            connection_initializer: None,
         })
     }
 
@@ -197,8 +248,9 @@ impl TlsSettings {
     pub fn new() -> Self {
         TlsSettings {
             cert_path: None,
-            key_path: None,
+            cert_pem: None,
             ca: None,
+            ca_pem: None,
             security_policy: None,
             alpn: None,
             psk_config: None,
@@ -206,7 +258,9 @@ impl TlsSettings {
             verify_client_hostname: false,
             max_blinding_delay: None,
             allow_serialization: false,
+            config_provider: None,
             callbacks: None,
+            connection_initializer: None,
         }
     }
 }

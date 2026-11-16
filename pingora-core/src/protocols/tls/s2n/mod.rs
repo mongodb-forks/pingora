@@ -16,17 +16,20 @@ pub mod client;
 pub mod server;
 mod stream;
 
+use crate::protocols::ALPN;
+use crate::utils::tls::X509Pem;
+use pingora_error::ErrorType::InternalError;
+use pingora_error::OrErr;
+use pingora_s2n::{
+    Config, ConfigBuilder, Connection, ConnectionBuilder, IgnoreVerifyHostnameCallback, Mode,
+    Psk as S2NPsk, PskHmac, S2NError, S2NPolicy,
+};
+use s2n_tls::enums::{ClientAuthType, SerializationVersion};
 use std::{
     hash::{Hash, Hasher},
     sync::Arc,
 };
-
-use pingora_s2n::{
-    Config, Connection, ConnectionBuilder, Mode, Psk as S2NPsk, PskHmac, S2NError, S2NPolicy,
-};
 pub use stream::*;
-
-use crate::utils::tls::X509Pem;
 
 pub type CaType = X509Pem;
 
@@ -71,6 +74,76 @@ impl Psk {
 
 pub type TlsRef = pingora_s2n::Connection;
 
+/// Config settings that are fixed for a given listener, cannot be set per-connection
+#[derive(Debug, Clone, Default)]
+pub struct ServerTlsOptions {
+    pub max_blinding_delay: Option<u32>,
+    pub client_auth_type: Option<ClientAuthType>,
+    pub alpn: Option<ALPN>,
+    pub verify_client_hostname: bool,
+    pub allow_serialization: bool,
+}
+
+impl ServerTlsOptions {
+    /// Returns a `ConfigBuilder` using the options set in `ServerTlsOptions`.
+    pub fn config_builder(&self) -> pingora_error::Result<ConfigBuilder> {
+        let mut builder = Config::builder();
+        if let Some(max_blinding_delay) = self.max_blinding_delay {
+            builder
+                .set_max_blinding_delay(max_blinding_delay)
+                .or_err(InternalError, "failed to set max blinding delay")?;
+        }
+
+        builder
+            .set_client_auth_type(self.client_auth_type.unwrap_or(ClientAuthType::Optional))
+            .or_err(InternalError, "failed to set client auth type")?;
+
+        if let Some(alpn) = &self.alpn {
+            builder
+                .set_application_protocol_preference(alpn.to_wire_protocols())
+                .or_err(InternalError, "failed to set ALPN")?;
+        }
+
+        if !self.verify_client_hostname {
+            builder
+                .set_verify_host_callback(IgnoreVerifyHostnameCallback::new())
+                .or_err(InternalError, "failed to set verify host callback")?;
+        }
+
+        if self.allow_serialization {
+            builder
+                .set_serialization_version(SerializationVersion::V1)
+                .or_err(InternalError, "could not init serialization")?;
+        }
+        Ok(builder)
+    }
+}
+
+/// Opaque per-connection value cap
+/// The closure here should be cheap, is called on every connection
+/// Should not build a config inside the closure, but instead return a pre-built one
+#[derive(Clone)]
+pub struct ConfigProvider(Arc<dyn Fn() -> Config + Send + Sync>);
+
+impl ConfigProvider {
+    pub fn new<F: Fn() -> Config + Send + Sync + 'static>(f: F) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn fixed(config: Config) -> Self {
+        Self::new(move || config.clone())
+    }
+    pub fn get(&self) -> Config {
+        self.0()
+    }
+}
+
+impl std::fmt::Debug for ConfigProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "ConfigProvider")
+    }
+}
+
 /// Custom s2n-tls connection builder. The s2n-tls-tokio crate doesn't expose
 /// a higher level api to configure private shared keys on a TLS connection.
 ///
@@ -79,7 +152,7 @@ pub type TlsRef = pingora_s2n::Connection;
 /// ```
 #[derive(Debug, Clone)]
 pub struct S2NConnectionBuilder {
-    pub config: Config,
+    pub config_provider: ConfigProvider,
     pub psk_config: Option<Arc<PskConfig>>,
     pub security_policy: Option<S2NPolicy>,
     pub allow_serialization: bool,
@@ -89,7 +162,7 @@ impl ConnectionBuilder for S2NConnectionBuilder {
     type Output = Connection;
     fn build_connection(&self, mode: Mode) -> std::result::Result<Self::Output, S2NError> {
         let mut conn = Connection::new(mode);
-        conn.set_config(self.config.clone())?;
+        conn.set_config(self.config_provider.get())?;
 
         if let Some(psk_config) = &self.psk_config {
             for psk in psk_config.keys.iter() {
