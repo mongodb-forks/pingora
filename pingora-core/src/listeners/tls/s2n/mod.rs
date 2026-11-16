@@ -235,6 +235,7 @@ impl TlsSettings {
             allow_serialization: false,
             config_provider: None,
             callbacks: None,
+            connection_initializer: None,
         })
     }
 
@@ -259,6 +260,7 @@ impl TlsSettings {
             allow_serialization: false,
             config_provider: None,
             callbacks: None,
+            connection_initializer: None,
         }
     }
 }
